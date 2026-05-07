@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1200</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Celested</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QGridLayout" name="centralLayout">
+    <item row="0" column="0">
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+
+      <!-- Image tab -->
+      <widget class="QWidget" name="imagePage">
+       <attribute name="title">
+        <string>Image</string>
+       </attribute>
+       <layout class="QGridLayout" name="imageLayout">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout" name="imageButtonsLayout">
+          <item>
+           <widget class="QPushButton" name="openImageButton">
+            <property name="text">
+             <string>Open image...</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <widget class="QGraphicsView" name="imageView">
+          <property name="minimumSize">
+           <size>
+            <width>400</width>
+            <height>300</height>
+           </size>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- Types tab -->
+      <widget class="QWidget" name="typesPage">
+       <attribute name="title">
+        <string>Types</string>
+       </attribute>
+       <layout class="QGridLayout" name="typesLayout">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout" name="typesButtonsLayout">
+          <item>
+           <widget class="QPushButton" name="addTypeButton">
+            <property name="text">
+             <string>Add type</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="deleteTypeButton">
+            <property name="text">
+             <string>Delete type</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <widget class="QTableView" name="typesTableView"/>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- Objects tab -->
+      <widget class="QWidget" name="objectsPage">
+       <attribute name="title">
+        <string>Objects</string>
+       </attribute>
+       <layout class="QGridLayout" name="objectsLayout">
+        <item row="0" column="0">
+         <layout class="QHBoxLayout" name="objectsButtonsLayout">
+          <item>
+           <widget class="QPushButton" name="addObjectButton">
+            <property name="text">
+             <string>Add object</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="deleteObjectButton">
+            <property name="text">
+             <string>Delete object</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="1" column="0">
+         <widget class="QTableView" name="objectsTableView"/>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- Tags tab (пока пустая) -->
+      <widget class="QWidget" name="tagsPage">
+       <attribute name="title">
+        <string>Tags</string>
+       </attribute>
+      </widget>
+
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1200</width>
+     <height>22</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

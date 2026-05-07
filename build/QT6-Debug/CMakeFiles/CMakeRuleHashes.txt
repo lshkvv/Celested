@@ -1,0 +1,4 @@
+# Hashes of file build rules.
+7b76f843a6c2d989dca7fe8d86fa252b CMakeFiles/Celested_autogen
+807ffe06aa3c07e3328363ff6b0c1466 Celested_autogen/timestamp
+a4f2c5913a5469bf8b163ef0ecc65015 ui_mainwindow.h

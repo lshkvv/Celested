@@ -1,0 +1,5 @@
+/Users/aleksalaskevich/projects/Celested/build/QT6-Debug/CMakeFiles/Celested.dir
+/Users/aleksalaskevich/projects/Celested/build/QT6-Debug/CMakeFiles/edit_cache.dir
+/Users/aleksalaskevich/projects/Celested/build/QT6-Debug/CMakeFiles/rebuild_cache.dir
+/Users/aleksalaskevich/projects/Celested/build/QT6-Debug/CMakeFiles/Celested_autogen_timestamp_deps.dir
+/Users/aleksalaskevich/projects/Celested/build/QT6-Debug/CMakeFiles/Celested_autogen.dir
