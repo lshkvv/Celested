@@ -20,16 +20,17 @@ endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Sql)
 
 set(SOURCES
-    main.cpp
-    mainwindow.cpp
+    src/main.cpp
+    src/mainwindow.cpp
 )
 
 set(HEADERS
-    mainwindow.h
+    src/mainwindow.h
 )
 
 set(FORMS
-    mainwindow.ui
+    ui/mainwindow.ui
+    ui/dialog.ui
 )
 
 add_executable(${PROJECT_NAME}
