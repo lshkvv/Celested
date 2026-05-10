@@ -8,6 +8,7 @@
 #include <QVariant>
 
 class QGraphicsSceneMouseEvent;
+class QPainter;
 
 class DetectionRectItem : public QObject, public QGraphicsRectItem
 {
@@ -20,16 +21,32 @@ public:
 
 signals:
     void clicked(int detectionId);
-    void moved(int detectionId, const QRectF &rect);
+    void geometryChanged(int detectionId, const QRectF &rect);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+    void hoverMoveEvent(QGraphicsSceneHoverEvent *event) override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
 private:
+    enum DragMode {
+        NoDrag,
+        MoveDrag,
+        ResizeBottomRight
+    };
+
+    QRectF handleRect() const;
+    void updateCursor(const QPointF &localPos);
+
     int m_detectionId;
     QPointF m_dragStartPos;
+    QRectF m_initialRect;
+    DragMode m_dragMode;
+    qreal m_handleSize;
+    qreal m_minSize;
 };
 
 #endif // DETECTIONRECTITEM_H

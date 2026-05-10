@@ -35,6 +35,27 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="zoomInButton">
+        <property name="text">
+         <string>Zoom +</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="zoomOutButton">
+        <property name="text">
+         <string>Zoom -</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="fitImageButton">
+        <property name="text">
+         <string>Fit image</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <spacer name="horizontalSpacer">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
@@ -55,99 +76,118 @@
        <enum>Qt::Horizontal</enum>
       </property>
       <widget class="ImageView" name="imageView"/>
-      <widget class="QTabWidget" name="sideTabWidget">
-       <property name="currentIndex">
-        <number>0</number>
-       </property>
-       <widget class="QWidget" name="objectsTab">
-        <attribute name="title">
-         <string>Objects</string>
-        </attribute>
-        <layout class="QVBoxLayout" name="objectsTabLayout">
-         <item>
-          <layout class="QHBoxLayout" name="objectsButtonsLayout">
-           <item>
-            <widget class="QPushButton" name="addObjectButton">
-             <property name="text">
-              <string>Add object</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="deleteObjectButton">
-             <property name="text">
-              <string>Delete object</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <widget class="QTableView" name="objectsTableView"/>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QWidget" name="detectionsTab">
-        <attribute name="title">
-         <string>Detections</string>
-        </attribute>
-        <layout class="QVBoxLayout" name="detectionsTabLayout">
-         <item>
-          <layout class="QHBoxLayout" name="detectionsButtonsLayout">
-           <item>
-            <widget class="QPushButton" name="linkDetectionButton">
-             <property name="text">
-              <string>Link to selected object</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="deleteDetectionButton">
-             <property name="text">
-              <string>Delete detection</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <widget class="QTableView" name="detectionsTableView"/>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QWidget" name="typesTab">
-        <attribute name="title">
-         <string>Types</string>
-        </attribute>
-        <layout class="QVBoxLayout" name="typesTabLayout">
-         <item>
-          <layout class="QHBoxLayout" name="typesButtonsLayout">
-           <item>
-            <widget class="QPushButton" name="addTypeButton">
-             <property name="text">
-              <string>Add type</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="deleteTypeButton">
-             <property name="text">
-              <string>Delete type</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <widget class="QTableView" name="typesTableView"/>
-         </item>
-        </layout>
-       </widget>
+      <widget class="QWidget" name="rightPanel">
+       <layout class="QVBoxLayout" name="rightPanelLayout">
+        <item>
+         <widget class="QTabWidget" name="sideTabWidget">
+          <property name="currentIndex">
+           <number>0</number>
+          </property>
+          <widget class="QWidget" name="objectsTab">
+           <attribute name="title">
+            <string>Objects</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="objectsTabLayout">
+            <item>
+             <layout class="QHBoxLayout" name="objectsButtonsLayout">
+              <item>
+               <widget class="QPushButton" name="addObjectButton">
+                <property name="text">
+                 <string>Add object</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="deleteObjectButton">
+                <property name="text">
+                 <string>Delete object</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableView" name="objectsTableView"/>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="detectionsTab">
+           <attribute name="title">
+            <string>Detections</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="detectionsTabLayout">
+            <item>
+             <layout class="QHBoxLayout" name="detectionsButtonsLayout">
+              <item>
+               <widget class="QPushButton" name="linkDetectionButton">
+                <property name="text">
+                 <string>Link to selected object</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="deleteDetectionButton">
+                <property name="text">
+                 <string>Delete detection</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableView" name="detectionsTableView"/>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="typesTab">
+           <attribute name="title">
+            <string>Types</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="typesTabLayout">
+            <item>
+             <layout class="QHBoxLayout" name="typesButtonsLayout">
+              <item>
+               <widget class="QPushButton" name="addTypeButton">
+                <property name="text">
+                 <string>Add type</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="deleteTypeButton">
+                <property name="text">
+                 <string>Delete type</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableView" name="typesTableView"/>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPlainTextEdit" name="objectInfoEdit">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>110</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>160</height>
+           </size>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </widget>
-    </item>
-    <item>
-     <widget class="QPlainTextEdit" name="objectInfoEdit"/>
     </item>
    </layout>
   </widget>

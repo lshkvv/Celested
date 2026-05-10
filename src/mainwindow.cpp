@@ -14,7 +14,6 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsScene>
-#include <QGraphicsPixmapItem>
 #include <QPixmap>
 #include <QPen>
 #include <QBrush>
@@ -22,10 +21,8 @@
 #include <QItemSelectionModel>
 #include <QVariant>
 #include <QPushButton>
-#include <QTableView>
-#include <QPlainTextEdit>
-#include <QTabWidget>
-#include <QSplitter>
+#include <QTimer>
+#include <QGraphicsItem>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -38,8 +35,19 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    ui->objectInfoEdit->setReadOnly(true);
+    ui->objectInfoEdit->setPlainText("Open an image to begin.");
+
+    ui->mainSplitter->setChildrenCollapsible(false);
+    ui->mainSplitter->setStretchFactor(0, 8);
+    ui->mainSplitter->setStretchFactor(1, 5);
+
+    QTimer::singleShot(0, this, [this]() {
+        ui->mainSplitter->setSizes({900, 520});
+    });
+
+    ui->imageView->setMinimumWidth(420);
     ui->imageView->setScene(imageScene);
-    ui->imageView->setDragMode(QGraphicsView::ScrollHandDrag);
 
     QSqlDatabase db = QSqlDatabase::database("objects-connection");
     if (!db.isValid() || !db.isOpen()) {
@@ -61,9 +69,6 @@ MainWindow::MainWindow(QWidget *parent)
     ui->typesTableView->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->typesTableView->setColumnHidden(0, true);
     ui->typesTableView->horizontalHeader()->setStretchLastSection(true);
-
-    connect(ui->addTypeButton, &QPushButton::clicked, this, &MainWindow::addType);
-    connect(ui->deleteTypeButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentType);
 
     objectsModel = new QSqlRelationalTableModel(this, db);
     objectsModel->setTable("objects");
@@ -88,9 +93,6 @@ MainWindow::MainWindow(QWidget *parent)
     ui->objectsTableView->setColumnHidden(3, true);
     ui->objectsTableView->horizontalHeader()->setStretchLastSection(true);
 
-    connect(ui->addObjectButton, &QPushButton::clicked, this, &MainWindow::addObject);
-    connect(ui->deleteObjectButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentObject);
-
     detectionsModel = new QSqlTableModel(this, db);
     detectionsModel->setTable("detections");
     detectionsModel->setEditStrategy(QSqlTableModel::OnFieldChange);
@@ -111,11 +113,21 @@ MainWindow::MainWindow(QWidget *parent)
     ui->detectionsTableView->setColumnHidden(1, true);
     ui->detectionsTableView->horizontalHeader()->setStretchLastSection(true);
 
+    connect(ui->addTypeButton, &QPushButton::clicked, this, &MainWindow::addType);
+    connect(ui->deleteTypeButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentType);
+
+    connect(ui->addObjectButton, &QPushButton::clicked, this, &MainWindow::addObject);
+    connect(ui->deleteObjectButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentObject);
+
     connect(ui->deleteDetectionButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentDetection);
     connect(ui->linkDetectionButton, &QPushButton::clicked, this, &MainWindow::linkDetectionToSelectedObject);
 
     connect(ui->openImageButton, &QPushButton::clicked, this, &MainWindow::openImage);
     connect(ui->drawDetectionButton, &QPushButton::toggled, this, &MainWindow::toggleDrawMode);
+
+    connect(ui->zoomInButton, &QPushButton::clicked, ui->imageView, &ImageView::zoomIn);
+    connect(ui->zoomOutButton, &QPushButton::clicked, ui->imageView, &ImageView::zoomOut);
+    connect(ui->fitImageButton, &QPushButton::clicked, ui->imageView, &ImageView::fitSceneInView);
 
     connect(ui->imageView, &ImageView::detectionDrawn, this, &MainWindow::saveDetectionFromRect);
 
@@ -128,9 +140,6 @@ MainWindow::MainWindow(QWidget *parent)
             &QItemSelectionModel::currentRowChanged,
             this,
             &MainWindow::handleDetectionSelection);
-
-    ui->objectInfoEdit->setReadOnly(true);
-    ui->objectInfoEdit->setPlainText("Open an image to begin.");
 }
 
 MainWindow::~MainWindow()
@@ -218,7 +227,7 @@ void MainWindow::openImage()
 
     imageScene->addPixmap(pix);
     imageScene->setSceneRect(pix.rect());
-    ui->imageView->fitInView(imageScene->sceneRect(), Qt::KeepAspectRatio);
+    ui->imageView->fitSceneInView();
 
     QSqlDatabase db = QSqlDatabase::database("objects-connection");
     if (!db.isValid() || !db.isOpen()) {
@@ -251,7 +260,7 @@ void MainWindow::openImage()
     loadDetections();
 
     ui->objectInfoEdit->setPlainText(
-        QString("Image loaded:\n%1\n\nYou can draw, select and move detections.")
+        QString("Image loaded:\n%1\n\nUse mouse wheel or zoom buttons to inspect details.")
             .arg(QFileInfo(path).fileName())
         );
 }
@@ -284,8 +293,8 @@ void MainWindow::toggleDrawMode(bool checked)
     if (checked) {
         const int objectId = currentSelectedObjectId();
         if (objectId > 0) {
-            const QString objectName = objectsModel->data(
-                                                       objectsModel->index(ui->objectsTableView->currentIndex().row(), 1)).toString();
+            const QString objectName =
+                objectsModel->data(objectsModel->index(ui->objectsTableView->currentIndex().row(), 1)).toString();
             ui->objectInfoEdit->setPlainText(
                 QString("Draw mode enabled.\n\nCurrent target object: %1\nDraw a rectangle on the image.")
                     .arg(objectName)
@@ -339,7 +348,7 @@ void MainWindow::saveDetectionFromRect(const QRectF &rect)
     if (objectId > 0)
         query.bindValue(":object_id", objectId);
     else
-        query.bindValue(":object_id", QVariant(QVariant::Int));
+        query.bindValue(":object_id", QVariant());
 
     query.bindValue(":x", rect.x());
     query.bindValue(":y", rect.y());
@@ -430,7 +439,7 @@ void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
     selectDetectionById(detectionId);
 
     ui->objectInfoEdit->setPlainText(
-        QString("Detection moved.\n\nDetection ID: %1\nx=%2\ny=%3\nwidth=%4\nheight=%5")
+        QString("Detection updated.\n\nDetection ID: %1\nx=%2\ny=%3\nwidth=%4\nheight=%5")
             .arg(detectionId)
             .arg(rect.x())
             .arg(rect.y())
@@ -477,10 +486,12 @@ void MainWindow::createTestDetection()
         "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"
         );
     query.bindValue(":image_id", currentImageId);
+
     if (objectId > 0)
         query.bindValue(":object_id", objectId);
     else
-        query.bindValue(":object_id", QVariant(QVariant::Int));
+        query.bindValue(":object_id", QVariant());
+
     query.bindValue(":x", 120.0);
     query.bindValue(":y", 90.0);
     query.bindValue(":width", 180.0);
@@ -516,7 +527,6 @@ void MainWindow::loadDetections()
 
     QPen pen(QColor(0, 255, 140));
     pen.setWidth(2);
-
     QBrush brush(QColor(0, 255, 140, 30));
 
     while (query.next()) {
@@ -531,7 +541,7 @@ void MainWindow::loadDetections()
         rectItem->setBrush(brush);
 
         connect(rectItem, &DetectionRectItem::clicked, this, &MainWindow::selectDetectionById);
-        connect(rectItem, &DetectionRectItem::moved, this, &MainWindow::updateDetectionGeometry);
+        connect(rectItem, &DetectionRectItem::geometryChanged, this, &MainWindow::updateDetectionGeometry);
 
         imageScene->addItem(rectItem);
         detectionItemsById[detectionId] = rectItem;
@@ -640,7 +650,7 @@ void MainWindow::updateDetectionInfo()
     text += "Width: " + w + "\n";
     text += "Height: " + h + "\n";
     text += "Confidence: " + confidence + "\n\n";
-    text += "You can click or drag this rectangle directly on the image.";
+    text += "You can click, move and resize this rectangle directly on the image.";
 
     ui->objectInfoEdit->setPlainText(text);
 }
