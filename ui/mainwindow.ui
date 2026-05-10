@@ -6,119 +6,148 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1200</width>
-    <height>800</height>
+    <width>1500</width>
+    <height>950</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Celested</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QGridLayout" name="centralLayout">
-    <item row="0" column="0">
-     <widget class="QTabWidget" name="tabWidget">
-      <property name="currentIndex">
-       <number>0</number>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <layout class="QHBoxLayout" name="topBarLayout">
+      <item>
+       <widget class="QPushButton" name="openImageButton">
+        <property name="text">
+         <string>Open image...</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="drawDetectionButton">
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>Draw detection</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="horizontalSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QSplitter" name="mainSplitter">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
       </property>
-
-      <!-- Image tab -->
-      <widget class="QWidget" name="imagePage">
-       <attribute name="title">
-        <string>Image</string>
-       </attribute>
-       <layout class="QGridLayout" name="imageLayout">
-        <item row="0" column="0">
-         <layout class="QHBoxLayout" name="imageButtonsLayout">
-          <item>
-           <widget class="QPushButton" name="openImageButton">
-            <property name="text">
-             <string>Open image...</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="0">
-         <widget class="QGraphicsView" name="imageView">
-          <property name="minimumSize">
-           <size>
-            <width>400</width>
-            <height>300</height>
-           </size>
-          </property>
-         </widget>
-        </item>
-       </layout>
+      <widget class="ImageView" name="imageView"/>
+      <widget class="QTabWidget" name="sideTabWidget">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="objectsTab">
+        <attribute name="title">
+         <string>Objects</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="objectsTabLayout">
+         <item>
+          <layout class="QHBoxLayout" name="objectsButtonsLayout">
+           <item>
+            <widget class="QPushButton" name="addObjectButton">
+             <property name="text">
+              <string>Add object</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="deleteObjectButton">
+             <property name="text">
+              <string>Delete object</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QTableView" name="objectsTableView"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="detectionsTab">
+        <attribute name="title">
+         <string>Detections</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="detectionsTabLayout">
+         <item>
+          <layout class="QHBoxLayout" name="detectionsButtonsLayout">
+           <item>
+            <widget class="QPushButton" name="linkDetectionButton">
+             <property name="text">
+              <string>Link to selected object</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="deleteDetectionButton">
+             <property name="text">
+              <string>Delete detection</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QTableView" name="detectionsTableView"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="typesTab">
+        <attribute name="title">
+         <string>Types</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="typesTabLayout">
+         <item>
+          <layout class="QHBoxLayout" name="typesButtonsLayout">
+           <item>
+            <widget class="QPushButton" name="addTypeButton">
+             <property name="text">
+              <string>Add type</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="deleteTypeButton">
+             <property name="text">
+              <string>Delete type</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QTableView" name="typesTableView"/>
+         </item>
+        </layout>
+       </widget>
       </widget>
-
-      <!-- Types tab -->
-      <widget class="QWidget" name="typesPage">
-       <attribute name="title">
-        <string>Types</string>
-       </attribute>
-       <layout class="QGridLayout" name="typesLayout">
-        <item row="0" column="0">
-         <layout class="QHBoxLayout" name="typesButtonsLayout">
-          <item>
-           <widget class="QPushButton" name="addTypeButton">
-            <property name="text">
-             <string>Add type</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="deleteTypeButton">
-            <property name="text">
-             <string>Delete type</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="0">
-         <widget class="QTableView" name="typesTableView"/>
-        </item>
-       </layout>
-      </widget>
-
-      <!-- Objects tab -->
-      <widget class="QWidget" name="objectsPage">
-       <attribute name="title">
-        <string>Objects</string>
-       </attribute>
-       <layout class="QGridLayout" name="objectsLayout">
-        <item row="0" column="0">
-         <layout class="QHBoxLayout" name="objectsButtonsLayout">
-          <item>
-           <widget class="QPushButton" name="addObjectButton">
-            <property name="text">
-             <string>Add object</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="deleteObjectButton">
-            <property name="text">
-             <string>Delete object</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="0">
-         <widget class="QTableView" name="objectsTableView"/>
-        </item>
-       </layout>
-      </widget>
-
-      <!-- Tags tab (пока пустая) -->
-      <widget class="QWidget" name="tagsPage">
-       <attribute name="title">
-        <string>Tags</string>
-       </attribute>
-      </widget>
-
      </widget>
+    </item>
+    <item>
+     <widget class="QPlainTextEdit" name="objectInfoEdit"/>
     </item>
    </layout>
   </widget>
@@ -127,13 +156,20 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1200</width>
-     <height>22</height>
+     <width>1500</width>
+     <height>24</height>
     </rect>
    </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ImageView</class>
+   <extends>QGraphicsView</extends>
+   <header>imageview.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
