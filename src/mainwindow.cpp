@@ -26,6 +26,12 @@
 #include <QShortcut>
 #include <QKeySequence>
 #include <QStatusBar>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QDir>
+#include <QDateTime>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -124,6 +130,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->deleteDetectionButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentDetection);
     connect(ui->linkDetectionButton, &QPushButton::clicked, this, &MainWindow::linkDetectionToSelectedObject);
+    connect(ui->exportJsonButton, &QPushButton::clicked, this, &MainWindow::exportAnnotationsToJson);
 
     connect(ui->openImageButton, &QPushButton::clicked, this, &MainWindow::openImage);
     connect(ui->drawDetectionButton, &QPushButton::toggled, this, &MainWindow::toggleDrawMode);
@@ -475,6 +482,100 @@ void MainWindow::linkDetectionToSelectedObject()
     selectDetectionById(detectionId);
     updateDetectionInfo();
     showStatusHint("Detection linked to object.");
+}
+
+void MainWindow::exportAnnotationsToJson()
+{
+    if (currentImageId < 0) {
+        showStatusHint("No image loaded.");
+        return;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database("objects-connection");
+    if (!db.isValid() || !db.isOpen()) {
+        showStatusHint("Database is not open.");
+        return;
+    }
+
+    QString imagePath;
+    {
+        QSqlQuery imageQuery(db);
+        imageQuery.prepare("SELECT path FROM images WHERE id = :id LIMIT 1");
+        imageQuery.bindValue(":id", currentImageId);
+
+        if (!imageQuery.exec() || !imageQuery.next()) {
+            showStatusHint("Failed to read image info.");
+            return;
+        }
+
+        imagePath = imageQuery.value(0).toString();
+    }
+
+    QJsonObject root;
+    root["image_id"] = currentImageId;
+    root["image_path"] = imagePath;
+    root["exported_at"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    QJsonArray detectionsArray;
+
+    QSqlQuery query(db);
+    query.prepare(
+        "SELECT id, object_id, x, y, width, height, confidence "
+        "FROM detections WHERE image_id = :image_id ORDER BY id"
+        );
+    query.bindValue(":image_id", currentImageId);
+
+    if (!query.exec()) {
+        showStatusHint("Failed to read detections.");
+        return;
+    }
+
+    while (query.next()) {
+        QJsonObject det;
+        det["id"] = query.value(0).toInt();
+
+        if (query.value(1).isNull())
+            det["object_id"] = QJsonValue::Null;
+        else
+            det["object_id"] = query.value(1).toInt();
+
+        det["x"] = query.value(2).toDouble();
+        det["y"] = query.value(3).toDouble();
+        det["width"] = query.value(4).toDouble();
+        det["height"] = query.value(5).toDouble();
+        det["confidence"] = query.value(6).toDouble();
+
+        detectionsArray.append(det);
+    }
+
+    root["detections"] = detectionsArray;
+
+    const QString baseName = QFileInfo(imagePath).completeBaseName();
+    const QString defaultName = baseName.isEmpty()
+                                    ? QString("annotations.json")
+                                    : baseName + QString("_annotations.json");
+
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        tr("Export annotations to JSON"),
+        QDir::homePath() + "/" + defaultName,
+        tr("JSON Files (*.json)")
+        );
+
+    if (filePath.isEmpty())
+        return;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        showStatusHint("Failed to open file for writing.");
+        return;
+    }
+
+    QJsonDocument doc(root);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
+
+    showStatusHint(QString("Annotations exported: %1").arg(QFileInfo(filePath).fileName()), 3000);
 }
 
 void MainWindow::selectDetectionById(int detectionId)
