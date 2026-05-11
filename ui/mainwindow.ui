@@ -42,6 +42,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="importJsonButton">
+        <property name="text">
+         <string>Import JSON</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="exportYoloButton">
         <property name="text">
          <string>Export YOLO</string>

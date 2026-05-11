@@ -30,6 +30,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QDir>
 #include <QDateTime>
 #include <QTextStream>
@@ -126,40 +127,43 @@ MainWindow::MainWindow(QWidget *parent)
     ui->detectionsTableView->setColumnHidden(1, true);
     ui->detectionsTableView->horizontalHeader()->setStretchLastSection(true);
 
-    connect(ui->addTypeButton, &QPushButton::clicked, this, &MainWindow::addType);
+    connect(ui->addTypeButton,    &QPushButton::clicked, this, &MainWindow::addType);
     connect(ui->deleteTypeButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentType);
 
-    connect(ui->addObjectButton, &QPushButton::clicked, this, &MainWindow::addObject);
+    connect(ui->addObjectButton,    &QPushButton::clicked, this, &MainWindow::addObject);
     connect(ui->deleteObjectButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentObject);
 
     connect(ui->deleteDetectionButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentDetection);
-    connect(ui->linkDetectionButton, &QPushButton::clicked, this, &MainWindow::linkDetectionToSelectedObject);
+    connect(ui->linkDetectionButton,   &QPushButton::clicked, this, &MainWindow::linkDetectionToSelectedObject);
+
     connect(ui->exportJsonButton, &QPushButton::clicked, this, &MainWindow::exportAnnotationsToJson);
+    connect(ui->importJsonButton, &QPushButton::clicked, this, &MainWindow::importAnnotationsFromJson);
     connect(ui->exportYoloButton, &QPushButton::clicked, this, &MainWindow::exportAnnotationsToYolo);
 
-    connect(ui->openImageButton, &QPushButton::clicked, this, &MainWindow::openImage);
-    connect(ui->drawDetectionButton, &QPushButton::toggled, this, &MainWindow::toggleDrawMode);
+    connect(ui->openImageButton,    &QPushButton::clicked, this, &MainWindow::openImage);
+    connect(ui->drawDetectionButton,&QPushButton::toggled, this, &MainWindow::toggleDrawMode);
 
-    connect(ui->zoomInButton, &QPushButton::clicked, ui->imageView, &ImageView::zoomIn);
+    connect(ui->zoomInButton,  &QPushButton::clicked, ui->imageView, &ImageView::zoomIn);
     connect(ui->zoomOutButton, &QPushButton::clicked, ui->imageView, &ImageView::zoomOut);
-    connect(ui->fitImageButton, &QPushButton::clicked, ui->imageView, &ImageView::fitSceneInView);
+    connect(ui->fitImageButton,&QPushButton::clicked, ui->imageView, &ImageView::fitSceneInView);
 
-    connect(ui->imageView, &ImageView::detectionDrawn, this, &MainWindow::saveDetectionFromRect);
+    connect(ui->imageView, &ImageView::detectionDrawn,
+            this, &MainWindow::saveDetectionFromRect);
     connect(ui->imageView, &ImageView::temporaryPanStateChanged,
             this, &MainWindow::handleTemporaryPanState);
 
     connect(ui->objectsTableView->selectionModel(),
             &QItemSelectionModel::currentRowChanged,
-            this,
-            &MainWindow::handleObjectSelection);
+            this, &MainWindow::handleObjectSelection);
 
     connect(ui->detectionsTableView->selectionModel(),
             &QItemSelectionModel::currentRowChanged,
-            this,
-            &MainWindow::handleDetectionSelection);
+            this, &MainWindow::handleDetectionSelection);
 
     setupShortcuts();
-    statusBar()->showMessage("Ready. Shortcuts: Delete remove detection, F fit image, +/- zoom, Esc exit draw mode, Space pan.");
+    statusBar()->showMessage(
+        "Ready. Shortcuts: Delete — remove detection, F — fit image, +/- — zoom, Esc — exit draw mode, Space — pan."
+        );
 }
 
 MainWindow::~MainWindow()
@@ -295,7 +299,6 @@ void MainWindow::openImage()
 
     const QPixmap pix(path);
     if (pix.isNull()) {
-        ui->objectInfoEdit->setPlainText("Failed to load image.");
         showStatusHint("Failed to load image.");
         return;
     }
@@ -309,7 +312,6 @@ void MainWindow::openImage()
 
     QSqlDatabase db = QSqlDatabase::database("objects-connection");
     if (!db.isValid() || !db.isOpen()) {
-        ui->objectInfoEdit->setPlainText("Database is not open.");
         showStatusHint("Database is not open.");
         return;
     }
@@ -321,7 +323,6 @@ void MainWindow::openImage()
     query.bindValue(":title", QFileInfo(path).fileName());
 
     if (!query.exec()) {
-        ui->objectInfoEdit->setPlainText("Failed to save image record.");
         currentImageId = -1;
         showStatusHint("Failed to save image record.");
         return;
@@ -376,14 +377,16 @@ void MainWindow::toggleDrawMode(bool checked)
         const int objectId = currentSelectedObjectId();
         if (objectId > 0) {
             const QString objectName =
-                objectsModel->data(objectsModel->index(ui->objectsTableView->currentIndex().row(), 1)).toString();
+                objectsModel->data(objectsModel->index(
+                                       ui->objectsTableView->currentIndex().row(), 1)).toString();
             ui->objectInfoEdit->setPlainText(
                 QString("Draw mode enabled.\n\nCurrent target object: %1\nDraw a rectangle on the image.")
                     .arg(objectName)
                 );
         } else {
             ui->objectInfoEdit->setPlainText(
-                "Draw mode enabled.\n\nNo object selected.\nThe new detection will be created without object_id."
+                "Draw mode enabled.\n\nNo object selected.\n"
+                "The new detection will be created without object_id."
                 );
         }
         showStatusHint("Draw mode enabled.");
@@ -428,12 +431,7 @@ void MainWindow::saveDetectionFromRect(const QRectF &rect)
         "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"
         );
     query.bindValue(":image_id", currentImageId);
-
-    if (objectId > 0)
-        query.bindValue(":object_id", objectId);
-    else
-        query.bindValue(":object_id", QVariant());
-
+    query.bindValue(":object_id", objectId > 0 ? QVariant(objectId) : QVariant());
     query.bindValue(":x", rect.x());
     query.bindValue(":y", rect.y());
     query.bindValue(":width", rect.width());
@@ -465,7 +463,7 @@ void MainWindow::deleteCurrentDetection()
 void MainWindow::linkDetectionToSelectedObject()
 {
     const int detectionId = currentSelectedDetectionId();
-    const int objectId = currentSelectedObjectId();
+    const int objectId    = currentSelectedObjectId();
 
     if (detectionId < 0 || objectId < 0)
         return;
@@ -507,12 +505,10 @@ void MainWindow::exportAnnotationsToJson()
         QSqlQuery imageQuery(db);
         imageQuery.prepare("SELECT path FROM images WHERE id = :id LIMIT 1");
         imageQuery.bindValue(":id", currentImageId);
-
         if (!imageQuery.exec() || !imageQuery.next()) {
             showStatusHint("Failed to read image info.");
             return;
         }
-
         imagePath = imageQuery.value(0).toString();
     }
 
@@ -538,18 +534,14 @@ void MainWindow::exportAnnotationsToJson()
     while (query.next()) {
         QJsonObject det;
         det["id"] = query.value(0).toInt();
-
-        if (query.value(1).isNull())
-            det["object_id"] = QJsonValue::Null;
-        else
-            det["object_id"] = query.value(1).toInt();
-
+        det["object_id"] = query.value(1).isNull()
+                               ? QJsonValue::Null
+                               : QJsonValue(query.value(1).toInt());
         det["x"] = query.value(2).toDouble();
         det["y"] = query.value(3).toDouble();
         det["width"] = query.value(4).toDouble();
         det["height"] = query.value(5).toDouble();
         det["confidence"] = query.value(6).toDouble();
-
         detectionsArray.append(det);
     }
 
@@ -557,8 +549,8 @@ void MainWindow::exportAnnotationsToJson()
 
     const QString baseName = QFileInfo(imagePath).completeBaseName();
     const QString defaultName = baseName.isEmpty()
-                                    ? QString("annotations.json")
-                                    : baseName + QString("_annotations.json");
+                                    ? "annotations.json"
+                                    : baseName + "_annotations.json";
 
     const QString filePath = QFileDialog::getSaveFileName(
         this,
@@ -576,11 +568,141 @@ void MainWindow::exportAnnotationsToJson()
         return;
     }
 
-    QJsonDocument doc(root);
-    file.write(doc.toJson(QJsonDocument::Indented));
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     file.close();
 
-    showStatusHint(QString("Annotations exported: %1").arg(QFileInfo(filePath).fileName()), 3000);
+    showStatusHint(QString("Exported: %1").arg(QFileInfo(filePath).fileName()), 3000);
+}
+
+void MainWindow::importAnnotationsFromJson()
+{
+    QSqlDatabase db = QSqlDatabase::database("objects-connection");
+    if (!db.isValid() || !db.isOpen()) {
+        showStatusHint("Database is not open.");
+        return;
+    }
+
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        tr("Import annotations from JSON"),
+        QDir::homePath(),
+        tr("JSON Files (*.json)")
+        );
+
+    if (filePath.isEmpty())
+        return;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        showStatusHint("Failed to open JSON file.");
+        return;
+    }
+
+    const QByteArray data = file.readAll();
+    file.close();
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        showStatusHint("Invalid JSON format.");
+        return;
+    }
+
+    const QJsonObject root = doc.object();
+    const QString imagePath = root.value("image_path").toString().trimmed();
+    const QJsonArray detectionsArray = root.value("detections").toArray();
+
+    if (imagePath.isEmpty()) {
+        showStatusHint("JSON does not contain image_path.");
+        return;
+    }
+
+    const QPixmap pix(imagePath);
+    if (pix.isNull()) {
+        showStatusHint(QString("Cannot load image: %1").arg(imagePath));
+        return;
+    }
+
+    if (!db.transaction()) {
+        showStatusHint("Failed to start database transaction.");
+        return;
+    }
+
+    QSqlQuery imageQuery(db);
+    imageQuery.prepare("INSERT INTO images (path, title, created_at) "
+                       "VALUES (:path, :title, datetime('now'))");
+    imageQuery.bindValue(":path", imagePath);
+    imageQuery.bindValue(":title", QFileInfo(imagePath).fileName());
+
+    if (!imageQuery.exec()) {
+        db.rollback();
+        showStatusHint("Failed to create image record.");
+        return;
+    }
+
+    const int newImageId = imageQuery.lastInsertId().toInt();
+
+    QSqlQuery detQuery(db);
+    detQuery.prepare(
+        "INSERT INTO detections (image_id, object_id, x, y, width, height, confidence) "
+        "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"
+        );
+
+    for (const QJsonValue &value : detectionsArray) {
+        if (!value.isObject())
+            continue;
+
+        const QJsonObject det = value.toObject();
+
+        detQuery.bindValue(":image_id", newImageId);
+        detQuery.bindValue(":object_id",
+                           det.value("object_id").isNull()
+                               ? QVariant()
+                               : QVariant(det.value("object_id").toInt()));
+        detQuery.bindValue(":x", det.value("x").toDouble());
+        detQuery.bindValue(":y", det.value("y").toDouble());
+        detQuery.bindValue(":width", det.value("width").toDouble());
+        detQuery.bindValue(":height", det.value("height").toDouble());
+        detQuery.bindValue(":confidence", det.value("confidence").toDouble(1.0));
+
+        if (!detQuery.exec()) {
+            db.rollback();
+            showStatusHint("Failed to import detections.");
+            return;
+        }
+    }
+
+    if (!db.commit()) {
+        db.rollback();
+        showStatusHint("Failed to commit imported data.");
+        return;
+    }
+
+    currentImageId = newImageId;
+
+    imageScene->clear();
+    detectionItemsById.clear();
+
+    imageScene->addPixmap(pix);
+    imageScene->setSceneRect(pix.rect());
+    ui->imageView->fitSceneInView();
+
+    objectsModel->setFilter(QString("image_id = %1").arg(currentImageId));
+    objectsModel->select();
+
+    detectionsModel->setFilter(QString("image_id = %1").arg(currentImageId));
+    detectionsModel->select();
+
+    loadDetections();
+
+    ui->objectInfoEdit->setPlainText(
+        QString("JSON imported.\n\nImage: %1\nDetections loaded: %2")
+            .arg(QFileInfo(imagePath).fileName())
+            .arg(detectionsArray.size())
+        );
+
+    showStatusHint("JSON import completed.", 3000);
 }
 
 void MainWindow::exportAnnotationsToYolo()
@@ -601,12 +723,10 @@ void MainWindow::exportAnnotationsToYolo()
         QSqlQuery imageQuery(db);
         imageQuery.prepare("SELECT path FROM images WHERE id = :id LIMIT 1");
         imageQuery.bindValue(":id", currentImageId);
-
         if (!imageQuery.exec() || !imageQuery.next()) {
             showStatusHint("Failed to read image info.");
             return;
         }
-
         imagePath = imageQuery.value(0).toString();
     }
 
@@ -655,7 +775,6 @@ void MainWindow::exportAnnotationsToYolo()
     while (classQuery.next()) {
         const int typeId = classQuery.value(0).toInt();
         QString className = classQuery.value(1).toString().trimmed();
-
         if (className.isEmpty())
             className = "unknown";
 
@@ -690,8 +809,8 @@ void MainWindow::exportAnnotationsToYolo()
         return;
     }
 
-    const double imageWidth = static_cast<double>(imageSize.width());
-    const double imageHeight = static_cast<double>(imageSize.height());
+    const double imgW = static_cast<double>(imageSize.width());
+    const double imgH = static_cast<double>(imageSize.height());
 
     while (query.next()) {
         if (query.value(0).isNull())
@@ -702,22 +821,21 @@ void MainWindow::exportAnnotationsToYolo()
             continue;
 
         const int classId = typeIdToClassId[typeId];
-
         const double x = query.value(1).toDouble();
         const double y = query.value(2).toDouble();
         const double w = query.value(3).toDouble();
         const double h = query.value(4).toDouble();
 
-        const double xCenter = (x + w / 2.0) / imageWidth;
-        const double yCenter = (y + h / 2.0) / imageHeight;
-        const double normW = w / imageWidth;
-        const double normH = h / imageHeight;
+        const double xc = std::clamp((x + w / 2.0) / imgW, 0.0, 1.0);
+        const double yc = std::clamp((y + h / 2.0) / imgH, 0.0, 1.0);
+        const double nw = std::clamp(w / imgW, 0.0, 1.0);
+        const double nh = std::clamp(h / imgH, 0.0, 1.0);
 
         out << classId << ' '
-            << QString::number(std::clamp(xCenter, 0.0, 1.0), 'f', 6) << ' '
-            << QString::number(std::clamp(yCenter, 0.0, 1.0), 'f', 6) << ' '
-            << QString::number(std::clamp(normW, 0.0, 1.0), 'f', 6) << ' '
-            << QString::number(std::clamp(normH, 0.0, 1.0), 'f', 6) << '\n';
+            << QString::number(xc, 'f', 6) << ' '
+            << QString::number(yc, 'f', 6) << ' '
+            << QString::number(nw, 'f', 6) << ' '
+            << QString::number(nh, 'f', 6) << '\n';
     }
 
     labelsFile.close();
@@ -735,14 +853,12 @@ void MainWindow::exportAnnotationsToYolo()
     if (yamlFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
         QTextStream yamlOut(&yamlFile);
         yamlOut.setEncoding(QStringConverter::Utf8);
-
         yamlOut << "path: .\n";
         yamlOut << "train: images/train\n";
         yamlOut << "val: images/val\n";
         yamlOut << "names:\n";
         for (int i = 0; i < classNames.size(); ++i)
             yamlOut << "  " << i << ": " << classNames.at(i) << '\n';
-
         yamlFile.close();
     }
 
@@ -786,12 +902,12 @@ void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
     selectDetectionById(detectionId);
 
     ui->objectInfoEdit->setPlainText(
-        QString("Detection updated.\n\nDetection ID: %1\nx=%2\ny=%3\nwidth=%4\nheight=%5")
+        QString("Detection updated.\n\nID: %1\nx=%2  y=%3\nwidth=%4  height=%5")
             .arg(detectionId)
-            .arg(rect.x())
-            .arg(rect.y())
-            .arg(rect.width())
-            .arg(rect.height())
+            .arg(rect.x(), 0, 'f', 1)
+            .arg(rect.y(), 0, 'f', 1)
+            .arg(rect.width(), 0, 'f', 1)
+            .arg(rect.height(), 0, 'f', 1)
         );
 
     showStatusHint("Detection geometry updated.");
@@ -814,11 +930,9 @@ void MainWindow::createTestDetection()
     QSqlQuery checkQuery(db);
     checkQuery.prepare("SELECT COUNT(*) FROM detections WHERE image_id = :image_id");
     checkQuery.bindValue(":image_id", currentImageId);
-
-    if (!checkQuery.exec())
+    if (!checkQuery.exec() || !checkQuery.next())
         return;
-
-    if (checkQuery.next() && checkQuery.value(0).toInt() > 0)
+    if (checkQuery.value(0).toInt() > 0)
         return;
 
     QSqlQuery objectQuery(db);
@@ -835,12 +949,7 @@ void MainWindow::createTestDetection()
         "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"
         );
     query.bindValue(":image_id", currentImageId);
-
-    if (objectId > 0)
-        query.bindValue(":object_id", objectId);
-    else
-        query.bindValue(":object_id", QVariant());
-
+    query.bindValue(":object_id", objectId > 0 ? QVariant(objectId) : QVariant());
     query.bindValue(":x", 120.0);
     query.bindValue(":y", 90.0);
     query.bindValue(":width", 180.0);
@@ -856,8 +965,7 @@ void MainWindow::loadDetections()
 
     const auto items = imageScene->items();
     for (QGraphicsItem *item : items) {
-        auto *rectItem = dynamic_cast<DetectionRectItem *>(item);
-        if (rectItem)
+        if (auto *rectItem = dynamic_cast<DetectionRectItem *>(item))
             imageScene->removeItem(rectItem);
     }
 
@@ -870,13 +978,12 @@ void MainWindow::loadDetections()
     QSqlQuery query(db);
     query.prepare("SELECT id, x, y, width, height FROM detections WHERE image_id = :image_id");
     query.bindValue(":image_id", currentImageId);
-
     if (!query.exec())
         return;
 
-    QPen pen(QColor(0, 255, 140));
-    pen.setWidth(2);
-    QBrush brush(QColor(0, 255, 140, 30));
+    QPen defaultPen(QColor(0, 255, 140));
+    defaultPen.setWidth(2);
+    QBrush defaultBrush(QColor(0, 255, 140, 30));
 
     while (query.next()) {
         const int detectionId = query.value(0).toInt();
@@ -886,11 +993,13 @@ void MainWindow::loadDetections()
         const double h = query.value(4).toDouble();
 
         auto *rectItem = new DetectionRectItem(detectionId, QRectF(x, y, w, h));
-        rectItem->setPen(pen);
-        rectItem->setBrush(brush);
+        rectItem->setPen(defaultPen);
+        rectItem->setBrush(defaultBrush);
 
-        connect(rectItem, &DetectionRectItem::clicked, this, &MainWindow::selectDetectionById);
-        connect(rectItem, &DetectionRectItem::geometryChanged, this, &MainWindow::updateDetectionGeometry);
+        connect(rectItem, &DetectionRectItem::clicked,
+                this, &MainWindow::selectDetectionById);
+        connect(rectItem, &DetectionRectItem::geometryChanged,
+                this, &MainWindow::updateDetectionGeometry);
 
         imageScene->addItem(rectItem);
         detectionItemsById[detectionId] = rectItem;
@@ -907,15 +1016,16 @@ void MainWindow::highlightDetectionForObject(int objectId)
         return;
 
     QSqlQuery query(db);
-    query.prepare("SELECT id FROM detections WHERE image_id = :image_id AND object_id = :object_id LIMIT 1");
+    query.prepare(
+        "SELECT id FROM detections WHERE image_id = :image_id AND object_id = :object_id LIMIT 1"
+        );
     query.bindValue(":image_id", currentImageId);
     query.bindValue(":object_id", objectId);
 
     if (!query.exec() || !query.next())
         return;
 
-    const int detectionId = query.value(0).toInt();
-    selectDetectionById(detectionId);
+    selectDetectionById(query.value(0).toInt());
     highlightCurrentDetection();
 }
 
@@ -953,7 +1063,6 @@ void MainWindow::updateObjectInfo()
     }
 
     const int row = current.row();
-
     const QString name = objectsModel->data(objectsModel->index(row, 1)).toString();
     const QString type = objectsModel->data(objectsModel->index(row, 2)).toString();
     const QString ra = objectsModel->data(objectsModel->index(row, 4)).toString();
@@ -961,17 +1070,13 @@ void MainWindow::updateObjectInfo()
     const QString mag = objectsModel->data(objectsModel->index(row, 6)).toString();
     const QString constellation = objectsModel->data(objectsModel->index(row, 7)).toString();
 
-    QString text;
-    text += "Object summary\n\n";
-    text += "Name: " + name + "\n";
-    text += "Type: " + type + "\n";
-    text += "RA: " + ra + "\n";
-    text += "Dec: " + dec + "\n";
-    text += "Magnitude: " + mag + "\n";
-    text += "Constellation: " + constellation + "\n\n";
-    text += "You can draw a new detection for this object or link an existing detection to it.";
-
-    ui->objectInfoEdit->setPlainText(text);
+    ui->objectInfoEdit->setPlainText(
+        QString("Object summary\n\n"
+                "Name: %1\nType: %2\nRA: %3\nDec: %4\n"
+                "Magnitude: %5\nConstellation: %6\n\n"
+                "Draw a detection for this object or link an existing one.")
+            .arg(name, type, ra, dec, mag, constellation)
+        );
 }
 
 void MainWindow::updateDetectionInfo()
@@ -981,7 +1086,6 @@ void MainWindow::updateDetectionInfo()
         return;
 
     const int row = current.row();
-
     const QString detectionId = detectionsModel->data(detectionsModel->index(row, 0)).toString();
     const QString objectId = detectionsModel->data(detectionsModel->index(row, 2)).toString();
     const QString x = detectionsModel->data(detectionsModel->index(row, 3)).toString();
@@ -990,16 +1094,12 @@ void MainWindow::updateDetectionInfo()
     const QString h = detectionsModel->data(detectionsModel->index(row, 6)).toString();
     const QString confidence = detectionsModel->data(detectionsModel->index(row, 7)).toString();
 
-    QString text;
-    text += "Detection summary\n\n";
-    text += "Detection ID: " + detectionId + "\n";
-    text += "Object ID: " + objectId + "\n";
-    text += "X: " + x + "\n";
-    text += "Y: " + y + "\n";
-    text += "Width: " + w + "\n";
-    text += "Height: " + h + "\n";
-    text += "Confidence: " + confidence + "\n\n";
-    text += "You can click, move and resize this rectangle directly on the image.";
-
-    ui->objectInfoEdit->setPlainText(text);
+    ui->objectInfoEdit->setPlainText(
+        QString("Detection summary\n\n"
+                "Detection ID: %1\nObject ID: %2\n"
+                "X: %3  Y: %4\nWidth: %5  Height: %6\n"
+                "Confidence: %7\n\n"
+                "You can move and resize this rectangle directly on the image.")
+            .arg(detectionId, objectId, x, y, w, h, confidence)
+        );
 }
