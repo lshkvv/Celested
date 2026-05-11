@@ -23,6 +23,9 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QGraphicsItem>
+#include <QShortcut>
+#include <QKeySequence>
+#include <QStatusBar>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -130,6 +133,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->fitImageButton, &QPushButton::clicked, ui->imageView, &ImageView::fitSceneInView);
 
     connect(ui->imageView, &ImageView::detectionDrawn, this, &MainWindow::saveDetectionFromRect);
+    connect(ui->imageView, &ImageView::temporaryPanStateChanged,
+            this, &MainWindow::handleTemporaryPanState);
 
     connect(ui->objectsTableView->selectionModel(),
             &QItemSelectionModel::currentRowChanged,
@@ -140,11 +145,68 @@ MainWindow::MainWindow(QWidget *parent)
             &QItemSelectionModel::currentRowChanged,
             this,
             &MainWindow::handleDetectionSelection);
+
+    setupShortcuts();
+    statusBar()->showMessage("Ready. Shortcuts: Delete remove detection, F fit image, +/- zoom, Esc exit draw mode, Space pan.");
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::setupShortcuts()
+{
+    auto *deleteShortcut = new QShortcut(QKeySequence::Delete, this);
+    connect(deleteShortcut, &QShortcut::activated, this, [this]() {
+        if (currentSelectedDetectionId() > 0)
+            deleteCurrentDetection();
+    });
+
+    auto *fitShortcut = new QShortcut(QKeySequence(Qt::Key_F), this);
+    connect(fitShortcut, &QShortcut::activated, this, [this]() {
+        ui->imageView->fitSceneInView();
+        showStatusHint("Image fitted to view.");
+    });
+
+    auto *zoomInShortcut1 = new QShortcut(QKeySequence(Qt::Key_Plus), this);
+    connect(zoomInShortcut1, &QShortcut::activated, this, [this]() {
+        ui->imageView->zoomIn();
+        showStatusHint("Zoom in.");
+    });
+
+    auto *zoomInShortcut2 = new QShortcut(QKeySequence(Qt::Key_Equal), this);
+    connect(zoomInShortcut2, &QShortcut::activated, this, [this]() {
+        ui->imageView->zoomIn();
+        showStatusHint("Zoom in.");
+    });
+
+    auto *zoomOutShortcut = new QShortcut(QKeySequence(Qt::Key_Minus), this);
+    connect(zoomOutShortcut, &QShortcut::activated, this, [this]() {
+        ui->imageView->zoomOut();
+        showStatusHint("Zoom out.");
+    });
+
+    auto *escapeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    connect(escapeShortcut, &QShortcut::activated, this, [this]() {
+        if (ui->drawDetectionButton->isChecked()) {
+            ui->drawDetectionButton->setChecked(false);
+            showStatusHint("Draw mode disabled.");
+        }
+    });
+}
+
+void MainWindow::showStatusHint(const QString &message, int timeoutMs)
+{
+    statusBar()->showMessage(message, timeoutMs);
+}
+
+void MainWindow::handleTemporaryPanState(bool active)
+{
+    if (active)
+        showStatusHint("Pan mode: hold Space and drag with mouse.");
+    else
+        showStatusHint("Pan mode finished.", 1000);
 }
 
 void MainWindow::addType()
@@ -172,6 +234,7 @@ void MainWindow::deleteCurrentType()
 
     typesModel->removeRow(index.row());
     typesModel->select();
+    showStatusHint("Type deleted.");
 }
 
 void MainWindow::addObject()
@@ -188,6 +251,7 @@ void MainWindow::addObject()
     const QModelIndex nameIndex = objectsModel->index(row, 1);
     ui->objectsTableView->setCurrentIndex(nameIndex);
     ui->objectsTableView->edit(nameIndex);
+    showStatusHint("Object added.");
 }
 
 void MainWindow::deleteCurrentObject()
@@ -202,6 +266,7 @@ void MainWindow::deleteCurrentObject()
     objectsModel->removeRow(index.row());
     objectsModel->select();
     updateObjectInfo();
+    showStatusHint("Object deleted.");
 }
 
 void MainWindow::openImage()
@@ -219,6 +284,7 @@ void MainWindow::openImage()
     const QPixmap pix(path);
     if (pix.isNull()) {
         ui->objectInfoEdit->setPlainText("Failed to load image.");
+        showStatusHint("Failed to load image.");
         return;
     }
 
@@ -232,6 +298,7 @@ void MainWindow::openImage()
     QSqlDatabase db = QSqlDatabase::database("objects-connection");
     if (!db.isValid() || !db.isOpen()) {
         ui->objectInfoEdit->setPlainText("Database is not open.");
+        showStatusHint("Database is not open.");
         return;
     }
 
@@ -244,6 +311,7 @@ void MainWindow::openImage()
     if (!query.exec()) {
         ui->objectInfoEdit->setPlainText("Failed to save image record.");
         currentImageId = -1;
+        showStatusHint("Failed to save image record.");
         return;
     }
 
@@ -263,6 +331,8 @@ void MainWindow::openImage()
         QString("Image loaded:\n%1\n\nUse mouse wheel or zoom buttons to inspect details.")
             .arg(QFileInfo(path).fileName())
         );
+
+    showStatusHint(QString("Image loaded: %1").arg(QFileInfo(path).fileName()), 3000);
 }
 
 void MainWindow::handleObjectSelection(const QModelIndex &current, const QModelIndex &previous)
@@ -304,8 +374,10 @@ void MainWindow::toggleDrawMode(bool checked)
                 "Draw mode enabled.\n\nNo object selected.\nThe new detection will be created without object_id."
                 );
         }
+        showStatusHint("Draw mode enabled.");
     } else {
         updateObjectInfo();
+        showStatusHint("Draw mode disabled.");
     }
 }
 
@@ -362,6 +434,7 @@ void MainWindow::saveDetectionFromRect(const QRectF &rect)
     detectionsModel->select();
     loadDetections();
     updateDetectionInfo();
+    showStatusHint("Detection created.");
 }
 
 void MainWindow::deleteCurrentDetection()
@@ -374,6 +447,7 @@ void MainWindow::deleteCurrentDetection()
     detectionsModel->select();
     loadDetections();
     ui->objectInfoEdit->setPlainText("Detection deleted.");
+    showStatusHint("Detection deleted.");
 }
 
 void MainWindow::linkDetectionToSelectedObject()
@@ -400,6 +474,7 @@ void MainWindow::linkDetectionToSelectedObject()
     loadDetections();
     selectDetectionById(detectionId);
     updateDetectionInfo();
+    showStatusHint("Detection linked to object.");
 }
 
 void MainWindow::selectDetectionById(int detectionId)
@@ -446,6 +521,8 @@ void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
             .arg(rect.width())
             .arg(rect.height())
         );
+
+    showStatusHint("Detection geometry updated.");
 }
 
 void MainWindow::clearDetectionItems()

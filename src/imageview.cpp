@@ -9,30 +9,30 @@
 #include <QColor>
 #include <QResizeEvent>
 #include <QPainter>
+#include <QKeyEvent>
+#include <QFocusEvent>
 
 ImageView::ImageView(QWidget *parent)
     : QGraphicsView(parent)
     , m_drawModeEnabled(false)
     , m_drawing(false)
     , m_fitMode(true)
+    , m_spacePressed(false)
+    , m_temporaryPanActive(false)
     , m_previewRect(nullptr)
 {
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
     setRenderHint(QPainter::Antialiasing, true);
     setRenderHint(QPainter::SmoothPixmapTransform, true);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    setDragMode(QGraphicsView::ScrollHandDrag);
+    updateInteractionMode();
 }
 
 void ImageView::setDrawModeEnabled(bool enabled)
 {
     m_drawModeEnabled = enabled;
-
-    if (enabled)
-        setDragMode(QGraphicsView::NoDrag);
-    else
-        setDragMode(QGraphicsView::ScrollHandDrag);
 
     if (!enabled && m_previewRect) {
         if (scene())
@@ -41,6 +41,8 @@ void ImageView::setDrawModeEnabled(bool enabled)
         m_previewRect = nullptr;
         m_drawing = false;
     }
+
+    updateInteractionMode();
 }
 
 bool ImageView::isDrawModeEnabled() const
@@ -73,8 +75,41 @@ void ImageView::applyZoom(qreal factor)
     scale(factor, factor);
 }
 
+void ImageView::updateInteractionMode()
+{
+    if (m_temporaryPanActive) {
+        setDragMode(QGraphicsView::ScrollHandDrag);
+        setCursor(Qt::OpenHandCursor);
+    } else if (m_drawModeEnabled) {
+        setDragMode(QGraphicsView::NoDrag);
+        setCursor(Qt::CrossCursor);
+    } else {
+        setDragMode(QGraphicsView::ScrollHandDrag);
+        setCursor(Qt::ArrowCursor);
+    }
+}
+
+void ImageView::setTemporaryPanActive(bool active)
+{
+    if (m_temporaryPanActive == active)
+        return;
+
+    m_temporaryPanActive = active;
+    updateInteractionMode();
+    emit temporaryPanStateChanged(active);
+}
+
 void ImageView::mousePressEvent(QMouseEvent *event)
 {
+    setFocus();
+
+    if (m_temporaryPanActive) {
+        if (event->button() == Qt::LeftButton)
+            setCursor(Qt::ClosedHandCursor);
+        QGraphicsView::mousePressEvent(event);
+        return;
+    }
+
     if (!m_drawModeEnabled || !scene() || event->button() != Qt::LeftButton) {
         QGraphicsView::mousePressEvent(event);
         return;
@@ -98,6 +133,11 @@ void ImageView::mousePressEvent(QMouseEvent *event)
 
 void ImageView::mouseMoveEvent(QMouseEvent *event)
 {
+    if (m_temporaryPanActive) {
+        QGraphicsView::mouseMoveEvent(event);
+        return;
+    }
+
     if (!m_drawModeEnabled || !m_drawing || !m_previewRect || !scene()) {
         QGraphicsView::mouseMoveEvent(event);
         return;
@@ -110,6 +150,13 @@ void ImageView::mouseMoveEvent(QMouseEvent *event)
 
 void ImageView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_temporaryPanActive) {
+        if (event->button() == Qt::LeftButton)
+            setCursor(Qt::OpenHandCursor);
+        QGraphicsView::mouseReleaseEvent(event);
+        return;
+    }
+
     if (!m_drawModeEnabled || !m_drawing || !m_previewRect || event->button() != Qt::LeftButton) {
         QGraphicsView::mouseReleaseEvent(event);
         return;
@@ -148,4 +195,35 @@ void ImageView::resizeEvent(QResizeEvent *event)
 
     if (m_fitMode)
         fitSceneInView();
+}
+
+void ImageView::keyPressEvent(QKeyEvent *event)
+{
+    if (!event->isAutoRepeat() && event->key() == Qt::Key_Space) {
+        m_spacePressed = true;
+        setTemporaryPanActive(true);
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::keyPressEvent(event);
+}
+
+void ImageView::keyReleaseEvent(QKeyEvent *event)
+{
+    if (!event->isAutoRepeat() && event->key() == Qt::Key_Space) {
+        m_spacePressed = false;
+        setTemporaryPanActive(false);
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::keyReleaseEvent(event);
+}
+
+void ImageView::focusOutEvent(QFocusEvent *event)
+{
+    m_spacePressed = false;
+    setTemporaryPanActive(false);
+    QGraphicsView::focusOutEvent(event);
 }
