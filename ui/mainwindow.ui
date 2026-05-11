@@ -42,6 +42,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="exportYoloButton">
+        <property name="text">
+         <string>Export YOLO</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="zoomInButton">
         <property name="text">
          <string>Zoom +</string>

@@ -32,6 +32,10 @@
 #include <QJsonObject>
 #include <QDir>
 #include <QDateTime>
+#include <QTextStream>
+#include <QImageReader>
+#include <QStringConverter>
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -131,6 +135,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->deleteDetectionButton, &QPushButton::clicked, this, &MainWindow::deleteCurrentDetection);
     connect(ui->linkDetectionButton, &QPushButton::clicked, this, &MainWindow::linkDetectionToSelectedObject);
     connect(ui->exportJsonButton, &QPushButton::clicked, this, &MainWindow::exportAnnotationsToJson);
+    connect(ui->exportYoloButton, &QPushButton::clicked, this, &MainWindow::exportAnnotationsToYolo);
 
     connect(ui->openImageButton, &QPushButton::clicked, this, &MainWindow::openImage);
     connect(ui->drawDetectionButton, &QPushButton::toggled, this, &MainWindow::toggleDrawMode);
@@ -576,6 +581,172 @@ void MainWindow::exportAnnotationsToJson()
     file.close();
 
     showStatusHint(QString("Annotations exported: %1").arg(QFileInfo(filePath).fileName()), 3000);
+}
+
+void MainWindow::exportAnnotationsToYolo()
+{
+    if (currentImageId < 0) {
+        showStatusHint("No image loaded.");
+        return;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database("objects-connection");
+    if (!db.isValid() || !db.isOpen()) {
+        showStatusHint("Database is not open.");
+        return;
+    }
+
+    QString imagePath;
+    {
+        QSqlQuery imageQuery(db);
+        imageQuery.prepare("SELECT path FROM images WHERE id = :id LIMIT 1");
+        imageQuery.bindValue(":id", currentImageId);
+
+        if (!imageQuery.exec() || !imageQuery.next()) {
+            showStatusHint("Failed to read image info.");
+            return;
+        }
+
+        imagePath = imageQuery.value(0).toString();
+    }
+
+    QImageReader reader(imagePath);
+    const QSize imageSize = reader.size();
+    if (!imageSize.isValid() || imageSize.width() <= 0 || imageSize.height() <= 0) {
+        showStatusHint("Failed to read image size.");
+        return;
+    }
+
+    const QString exportDir = QFileDialog::getExistingDirectory(
+        this,
+        tr("Select folder for YOLO export"),
+        QDir::homePath()
+        );
+
+    if (exportDir.isEmpty())
+        return;
+
+    QDir dir(exportDir);
+
+    QString baseName = QFileInfo(imagePath).completeBaseName();
+    if (baseName.isEmpty())
+        baseName = QString("image_%1").arg(currentImageId);
+
+    QMap<int, int> typeIdToClassId;
+    QStringList classNames;
+
+    QSqlQuery classQuery(db);
+    classQuery.prepare(
+        "SELECT DISTINCT t.id, t.name "
+        "FROM detections d "
+        "LEFT JOIN objects o ON d.object_id = o.id "
+        "LEFT JOIN object_types t ON o.type_id = t.id "
+        "WHERE d.image_id = :image_id AND d.object_id IS NOT NULL AND t.id IS NOT NULL "
+        "ORDER BY t.name, t.id"
+        );
+    classQuery.bindValue(":image_id", currentImageId);
+
+    if (!classQuery.exec()) {
+        showStatusHint("Failed to read classes.");
+        return;
+    }
+
+    int nextClassId = 0;
+    while (classQuery.next()) {
+        const int typeId = classQuery.value(0).toInt();
+        QString className = classQuery.value(1).toString().trimmed();
+
+        if (className.isEmpty())
+            className = "unknown";
+
+        if (!typeIdToClassId.contains(typeId)) {
+            typeIdToClassId[typeId] = nextClassId++;
+            classNames.append(className);
+        }
+    }
+
+    QFile labelsFile(dir.filePath(baseName + ".txt"));
+    if (!labelsFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        showStatusHint("Failed to open YOLO label file.");
+        return;
+    }
+
+    QTextStream out(&labelsFile);
+    out.setEncoding(QStringConverter::Utf8);
+
+    QSqlQuery query(db);
+    query.prepare(
+        "SELECT o.type_id, d.x, d.y, d.width, d.height "
+        "FROM detections d "
+        "LEFT JOIN objects o ON d.object_id = o.id "
+        "WHERE d.image_id = :image_id "
+        "ORDER BY d.id"
+        );
+    query.bindValue(":image_id", currentImageId);
+
+    if (!query.exec()) {
+        labelsFile.close();
+        showStatusHint("Failed to read detections.");
+        return;
+    }
+
+    const double imageWidth = static_cast<double>(imageSize.width());
+    const double imageHeight = static_cast<double>(imageSize.height());
+
+    while (query.next()) {
+        if (query.value(0).isNull())
+            continue;
+
+        const int typeId = query.value(0).toInt();
+        if (!typeIdToClassId.contains(typeId))
+            continue;
+
+        const int classId = typeIdToClassId[typeId];
+
+        const double x = query.value(1).toDouble();
+        const double y = query.value(2).toDouble();
+        const double w = query.value(3).toDouble();
+        const double h = query.value(4).toDouble();
+
+        const double xCenter = (x + w / 2.0) / imageWidth;
+        const double yCenter = (y + h / 2.0) / imageHeight;
+        const double normW = w / imageWidth;
+        const double normH = h / imageHeight;
+
+        out << classId << ' '
+            << QString::number(std::clamp(xCenter, 0.0, 1.0), 'f', 6) << ' '
+            << QString::number(std::clamp(yCenter, 0.0, 1.0), 'f', 6) << ' '
+            << QString::number(std::clamp(normW, 0.0, 1.0), 'f', 6) << ' '
+            << QString::number(std::clamp(normH, 0.0, 1.0), 'f', 6) << '\n';
+    }
+
+    labelsFile.close();
+
+    QFile classesFile(dir.filePath("classes.txt"));
+    if (classesFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        QTextStream classesOut(&classesFile);
+        classesOut.setEncoding(QStringConverter::Utf8);
+        for (const QString &name : classNames)
+            classesOut << name << '\n';
+        classesFile.close();
+    }
+
+    QFile yamlFile(dir.filePath("data.yaml"));
+    if (yamlFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        QTextStream yamlOut(&yamlFile);
+        yamlOut.setEncoding(QStringConverter::Utf8);
+
+        yamlOut << "path: .\n";
+        yamlOut << "train: images/train\n";
+        yamlOut << "val: images/val\n";
+        yamlOut << "names:\n";
+        for (int i = 0; i < classNames.size(); ++i)
+            yamlOut << "  " << i << ": " << classNames.at(i) << '\n';
+
+        yamlFile.close();
+    }
+
+    showStatusHint(QString("YOLO exported: %1.txt").arg(baseName), 3000);
 }
 
 void MainWindow::selectDetectionById(int detectionId)

@@ -39,6 +39,7 @@ private slots:
     void deleteCurrentDetection();
     void linkDetectionToSelectedObject();
     void exportAnnotationsToJson();
+    void exportAnnotationsToYolo();
 
     void handleObjectSelection(const QModelIndex &current, const QModelIndex &previous);
     void handleDetectionSelection(const QModelIndex &current, const QModelIndex &previous);
