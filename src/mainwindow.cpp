@@ -184,6 +184,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupShortcuts();
     updateQuickStats();
+    refreshActionStates();
 
     statusBar()->showMessage(
         "Ready. Shortcuts: Delete — remove detection, F — fit image, +/- — zoom, Esc — exit draw mode, Space — pan."
@@ -317,6 +318,12 @@ void MainWindow::applyUiPolish()
             border: 1px solid #a46bff;
             color: #faf3ff;
             font-weight: 600;
+        }
+
+        QPushButton:disabled {
+            background: #101827;
+            color: #7080aa;
+            border: 1px solid #25304f;
         }
 
         QPushButton#openImageButton,
@@ -526,6 +533,108 @@ void MainWindow::setupShortcuts()
 void MainWindow::showStatusHint(const QString &message, int timeoutMs)
 {
     statusBar()->showMessage(message, timeoutMs);
+}
+
+bool MainWindow::hasLoadedImage() const
+{
+    return currentImageId >= 0 && imageScene && !imageScene->sceneRect().isEmpty();
+}
+
+void MainWindow::refreshActionStates()
+{
+    const bool imageLoaded = hasLoadedImage();
+    const bool hasObject = currentSelectedObjectId() > 0;
+    const bool hasDetection = currentSelectedDetectionId() > 0;
+
+    QStringList invalidIssues;
+    const bool selectedDetectionInvalid = selectedDetectionIsInvalid(&invalidIssues);
+
+    ui->drawDetectionButton->setEnabled(imageLoaded);
+    ui->zoomInButton->setEnabled(imageLoaded);
+    ui->zoomOutButton->setEnabled(imageLoaded);
+    ui->fitImageButton->setEnabled(imageLoaded);
+
+    ui->addObjectButton->setEnabled(imageLoaded);
+
+    ui->exportJsonButton->setEnabled(imageLoaded);
+    ui->importJsonButton->setEnabled(true);
+    ui->exportYoloButton->setEnabled(imageLoaded);
+    ui->validateButton->setEnabled(imageLoaded);
+
+    ui->deleteTypeButton->setEnabled(ui->typesTableView->currentIndex().isValid());
+    ui->deleteObjectButton->setEnabled(hasObject);
+
+    ui->deleteDetectionButton->setEnabled(hasDetection);
+    ui->linkDetectionButton->setEnabled(hasDetection && hasObject);
+    ui->focusDetectionButton->setEnabled(hasDetection);
+
+    ui->clampDetectionButton->setEnabled(hasDetection);
+    ui->clampDetectionButtonInline->setEnabled(hasDetection);
+
+    ui->deleteInvalidDetectionButton->setEnabled(hasDetection && selectedDetectionInvalid);
+    ui->deleteInvalidDetectionButtonInline->setEnabled(hasDetection && selectedDetectionInvalid);
+
+    if (!imageLoaded) {
+        ui->drawDetectionButton->setToolTip("Open an image first.");
+        ui->exportJsonButton->setToolTip("Open an image first.");
+        ui->exportYoloButton->setToolTip("Open an image first.");
+        ui->validateButton->setToolTip("Open an image first.");
+    } else {
+        ui->drawDetectionButton->setToolTip("Draw a new detection rectangle on the image.");
+        ui->exportJsonButton->setToolTip("Export annotations for the current image to JSON.");
+        ui->exportYoloButton->setToolTip("Export current image annotations in YOLO format.");
+        ui->validateButton->setToolTip("Validate current annotations and highlight problems.");
+    }
+
+    ui->addObjectButton->setToolTip(imageLoaded
+                                        ? "Create a new object for the current image."
+                                        : "Open an image first.");
+
+    ui->deleteTypeButton->setToolTip(
+        ui->typesTableView->currentIndex().isValid()
+            ? "Delete selected object type."
+            : "Select a type first."
+        );
+
+    ui->deleteObjectButton->setToolTip(
+        hasObject
+            ? "Delete selected object."
+            : "Select an object first."
+        );
+
+    ui->deleteDetectionButton->setToolTip(
+        hasDetection
+            ? "Delete selected detection."
+            : "Select a detection first."
+        );
+
+    ui->linkDetectionButton->setToolTip(
+        hasDetection && hasObject
+            ? "Assign the selected detection to the selected object."
+            : "Select both an object and a detection."
+        );
+
+    ui->focusDetectionButton->setToolTip(
+        hasDetection
+            ? "Zoom the canvas to the selected detection."
+            : "Select a detection first."
+        );
+
+    ui->clampDetectionButton->setToolTip(
+        hasDetection
+            ? "Clamp selected bbox to image bounds."
+            : "Select a detection first."
+        );
+    ui->clampDetectionButtonInline->setToolTip(ui->clampDetectionButton->toolTip());
+
+    const QString invalidTip = hasDetection
+                                   ? (selectedDetectionInvalid
+                                          ? QString("Delete selected invalid bbox.\n%1").arg(invalidIssues.join("\n"))
+                                          : "Selected detection is valid.")
+                                   : "Select a detection first.";
+
+    ui->deleteInvalidDetectionButton->setToolTip(invalidTip);
+    ui->deleteInvalidDetectionButtonInline->setToolTip(invalidTip);
 }
 
 void MainWindow::switchInspectorToLog(const QString &text)
@@ -817,6 +926,7 @@ bool MainWindow::ensureValidForYoloExport()
     }
 
     applyValidationHighlighting(result);
+    refreshActionStates();
     switchInspectorToLog(report);
 
     if (!result.issues.isEmpty()) {
@@ -872,6 +982,7 @@ void MainWindow::clampSelectedDetectionToImage()
 
     updateDetectionGeometry(detectionId, clamped);
     refreshValidationHighlighting();
+    refreshActionStates();
     switchInspectorToLog(QString("Detection %1 was clamped to image bounds.").arg(detectionId));
     showStatusHint("Selected bbox clamped to image.");
 }
@@ -930,6 +1041,7 @@ void MainWindow::addType()
     ui->rightTabWidget->setCurrentWidget(ui->catalogTab);
     ui->typesTableView->setCurrentIndex(nameIndex);
     ui->typesTableView->edit(nameIndex);
+    refreshActionStates();
 }
 
 void MainWindow::deleteCurrentType()
@@ -941,9 +1053,23 @@ void MainWindow::deleteCurrentType()
     if (!index.isValid())
         return;
 
+    const QString typeName = typesModel->data(typesModel->index(index.row(), 1)).toString();
+
+    const auto answer = QMessageBox::warning(
+        this,
+        "Delete type",
+        QString("Delete type \"%1\"?").arg(typeName),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+        );
+
+    if (answer != QMessageBox::Yes)
+        return;
+
     typesModel->removeRow(index.row());
     typesModel->select();
     updateQuickStats();
+    refreshActionStates();
     showStatusHint("Type deleted.");
 }
 
@@ -963,6 +1089,7 @@ void MainWindow::addObject()
     ui->objectsTableView->setCurrentIndex(nameIndex);
     ui->objectsTableView->edit(nameIndex);
     updateQuickStats();
+    refreshActionStates();
     showStatusHint("Object added.");
 }
 
@@ -975,11 +1102,25 @@ void MainWindow::deleteCurrentObject()
     if (!index.isValid())
         return;
 
+    const QString objectName = objectsModel->data(objectsModel->index(index.row(), 1)).toString();
+
+    const auto answer = QMessageBox::warning(
+        this,
+        "Delete object",
+        QString("Delete object \"%1\"?").arg(objectName),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+        );
+
+    if (answer != QMessageBox::Yes)
+        return;
+
     objectsModel->removeRow(index.row());
     objectsModel->select();
     updateObjectInfo();
     refreshValidationHighlighting();
     updateQuickStats();
+    refreshActionStates();
     showStatusHint("Object deleted.");
 }
 
@@ -1038,6 +1179,7 @@ void MainWindow::openImage()
     loadDetections();
     refreshValidationHighlighting();
     updateQuickStats();
+    refreshActionStates();
 
     const QString msg = QString("Image loaded:\n%1\n\nUse mouse wheel or zoom buttons to inspect details.")
                             .arg(QFileInfo(path).fileName());
@@ -1073,6 +1215,8 @@ void MainWindow::toggleDrawMode(bool checked)
         updateObjectInfo();
         showStatusHint("Draw mode disabled.");
     }
+
+    refreshActionStates();
 }
 
 void MainWindow::saveDetectionFromRect(const QRectF &rect)
@@ -1107,6 +1251,7 @@ void MainWindow::saveDetectionFromRect(const QRectF &rect)
     refreshValidationHighlighting();
     updateDetectionInfo();
     updateQuickStats();
+    refreshActionStates();
     ui->rightTabWidget->setCurrentWidget(ui->detectionsTab);
     showStatusHint("Detection created.");
 }
@@ -1117,11 +1262,25 @@ void MainWindow::deleteCurrentDetection()
     if (!index.isValid())
         return;
 
+    const QString detectionId = detectionsModel->data(detectionsModel->index(index.row(), 0)).toString();
+
+    const auto answer = QMessageBox::warning(
+        this,
+        "Delete detection",
+        QString("Delete detection #%1?").arg(detectionId),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+        );
+
+    if (answer != QMessageBox::Yes)
+        return;
+
     detectionsModel->removeRow(index.row());
     detectionsModel->select();
     loadDetections();
     refreshValidationHighlighting();
     updateQuickStats();
+    refreshActionStates();
     ui->objectInfoEdit->setPlainText("Detection deleted.");
     showStatusHint("Detection deleted.");
 }
@@ -1153,6 +1312,7 @@ void MainWindow::linkDetectionToSelectedObject()
     refreshValidationHighlighting();
     selectDetectionById(detectionId);
     updateDetectionInfo();
+    refreshActionStates();
     showStatusHint("Detection linked to object.");
 }
 
@@ -1235,6 +1395,7 @@ void MainWindow::exportAnnotationsToJson()
     file.close();
 
     switchInspectorToLog(QString("Exported JSON:\n%1").arg(filePath));
+    refreshActionStates();
     showStatusHint(QString("Exported: %1").arg(QFileInfo(filePath).fileName()), 3000);
 }
 
@@ -1357,6 +1518,7 @@ void MainWindow::importAnnotationsFromJson()
     loadDetections();
     refreshValidationHighlighting();
     updateQuickStats();
+    refreshActionStates();
 
     ui->objectInfoEdit->setPlainText(
         QString("JSON imported.\n\nImage: %1\nDetections loaded: %2")
@@ -1524,6 +1686,7 @@ void MainWindow::exportAnnotationsToYolo()
     }
 
     switchInspectorToLog(QString("YOLO export completed.\nDirectory: %1").arg(exportDir));
+    refreshActionStates();
     QMessageBox::information(this, "YOLO export",
                              QString("YOLO export completed successfully.\n\nFile: %1.txt").arg(baseName));
     showStatusHint(QString("YOLO exported: %1.txt").arg(baseName), 3000);
@@ -1542,6 +1705,7 @@ void MainWindow::validateAnnotations()
     ui->objectInfoEdit->setPlainText(report);
     switchInspectorToLog(report);
     applyValidationHighlighting(result);
+    refreshActionStates();
 
     if (!result.issues.isEmpty()) {
         QMessageBox::warning(this, "Validation completed",
@@ -1577,6 +1741,8 @@ void MainWindow::selectDetectionById(int detectionId)
             break;
         }
     }
+
+    refreshActionStates();
 }
 
 void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
@@ -1599,6 +1765,7 @@ void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
     detectionsModel->select();
     selectDetectionById(detectionId);
     refreshValidationHighlighting();
+    refreshActionStates();
 
     ui->objectInfoEdit->setPlainText(
         QString("Detection updated.\n\nID: %1\nx=%2  y=%3\nwidth=%4  height=%5")
@@ -1834,6 +2001,7 @@ void MainWindow::handleObjectSelection(const QModelIndex &current, const QModelI
 
     ui->rightTabWidget->setCurrentWidget(ui->catalogTab);
     updateObjectInfo();
+    refreshActionStates();
 }
 
 void MainWindow::handleDetectionSelection(const QModelIndex &current, const QModelIndex &previous)
@@ -1844,6 +2012,7 @@ void MainWindow::handleDetectionSelection(const QModelIndex &current, const QMod
     ui->rightTabWidget->setCurrentWidget(ui->detectionsTab);
     highlightCurrentDetection();
     updateDetectionInfo();
+    refreshActionStates();
 }
 
 int MainWindow::currentSelectedObjectId() const

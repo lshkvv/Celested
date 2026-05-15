@@ -97,6 +97,9 @@ private:
     void applySplitterDefaults();
     void fitImageIfAvailable();
 
+    void refreshActionStates();
+    bool hasLoadedImage() const;
+
 private:
     Ui::MainWindow *ui;
     QSqlTableModel *typesModel;
