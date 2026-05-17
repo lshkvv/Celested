@@ -1,63 +1,54 @@
 #include "imageview.h"
 
-#include <QMouseEvent>
-#include <QWheelEvent>
 #include <QGraphicsScene>
-#include <QGraphicsRectItem>
-#include <QPen>
-#include <QBrush>
-#include <QColor>
-#include <QResizeEvent>
-#include <QPainter>
 #include <QKeyEvent>
-#include <QFocusEvent>
+#include <QMouseEvent>
+#include <QRubberBand>
+#include <QWheelEvent>
 
 ImageView::ImageView(QWidget *parent)
     : QGraphicsView(parent)
     , m_drawModeEnabled(false)
     , m_drawing(false)
-    , m_fitMode(true)
-    , m_spacePressed(false)
     , m_temporaryPanActive(false)
-    , m_previewRect(nullptr)
+    , m_rubberBand(new QRubberBand(QRubberBand::Rectangle, this))
 {
-    setMouseTracking(true);
-    setFocusPolicy(Qt::StrongFocus);
-    setRenderHint(QPainter::Antialiasing, true);
-    setRenderHint(QPainter::SmoothPixmapTransform, true);
+    setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
+    setDragMode(QGraphicsView::ScrollHandDrag);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    updateInteractionMode();
+    setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
+    m_rubberBand->hide();
 }
 
 void ImageView::setDrawModeEnabled(bool enabled)
 {
     m_drawModeEnabled = enabled;
 
-    if (!enabled && m_previewRect) {
-        if (scene())
-            scene()->removeItem(m_previewRect);
-        delete m_previewRect;
-        m_previewRect = nullptr;
+    if (!enabled) {
         m_drawing = false;
+        m_rubberBand->hide();
     }
 
-    updateInteractionMode();
+    if (!m_temporaryPanActive)
+        setDragMode(enabled ? QGraphicsView::NoDrag : QGraphicsView::ScrollHandDrag);
 }
 
-bool ImageView::isDrawModeEnabled() const
+bool ImageView::drawModeEnabled() const
 {
     return m_drawModeEnabled;
 }
 
 void ImageView::zoomIn()
 {
-    applyZoom(1.15);
+    scale(1.15, 1.15);
 }
 
 void ImageView::zoomOut()
 {
-    applyZoom(1.0 / 1.15);
+    scale(1.0 / 1.15, 1.0 / 1.15);
 }
 
 void ImageView::fitSceneInView()
@@ -66,142 +57,81 @@ void ImageView::fitSceneInView()
         return;
 
     fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
-    m_fitMode = true;
-}
-
-void ImageView::applyZoom(qreal factor)
-{
-    m_fitMode = false;
-    scale(factor, factor);
-}
-
-void ImageView::updateInteractionMode()
-{
-    if (m_temporaryPanActive) {
-        setDragMode(QGraphicsView::ScrollHandDrag);
-        setCursor(Qt::OpenHandCursor);
-    } else if (m_drawModeEnabled) {
-        setDragMode(QGraphicsView::NoDrag);
-        setCursor(Qt::CrossCursor);
-    } else {
-        setDragMode(QGraphicsView::ScrollHandDrag);
-        setCursor(Qt::ArrowCursor);
-    }
-}
-
-void ImageView::setTemporaryPanActive(bool active)
-{
-    if (m_temporaryPanActive == active)
-        return;
-
-    m_temporaryPanActive = active;
-    updateInteractionMode();
-    emit temporaryPanStateChanged(active);
-}
-
-void ImageView::mousePressEvent(QMouseEvent *event)
-{
-    setFocus();
-
-    if (m_temporaryPanActive) {
-        if (event->button() == Qt::LeftButton)
-            setCursor(Qt::ClosedHandCursor);
-        QGraphicsView::mousePressEvent(event);
-        return;
-    }
-
-    if (!m_drawModeEnabled || !scene() || event->button() != Qt::LeftButton) {
-        QGraphicsView::mousePressEvent(event);
-        return;
-    }
-
-    m_drawing = true;
-    m_startScenePos = mapToScene(event->pos());
-
-    if (m_previewRect) {
-        scene()->removeItem(m_previewRect);
-        delete m_previewRect;
-        m_previewRect = nullptr;
-    }
-
-    QPen pen(QColor(255, 80, 80));
-    pen.setWidth(2);
-    QBrush brush(QColor(255, 80, 80, 40));
-
-    m_previewRect = scene()->addRect(QRectF(m_startScenePos, m_startScenePos), pen, brush);
-}
-
-void ImageView::mouseMoveEvent(QMouseEvent *event)
-{
-    if (m_temporaryPanActive) {
-        QGraphicsView::mouseMoveEvent(event);
-        return;
-    }
-
-    if (!m_drawModeEnabled || !m_drawing || !m_previewRect || !scene()) {
-        QGraphicsView::mouseMoveEvent(event);
-        return;
-    }
-
-    const QPointF currentScenePos = mapToScene(event->pos());
-    const QRectF rect = QRectF(m_startScenePos, currentScenePos).normalized();
-    m_previewRect->setRect(rect);
-}
-
-void ImageView::mouseReleaseEvent(QMouseEvent *event)
-{
-    if (m_temporaryPanActive) {
-        if (event->button() == Qt::LeftButton)
-            setCursor(Qt::OpenHandCursor);
-        QGraphicsView::mouseReleaseEvent(event);
-        return;
-    }
-
-    if (!m_drawModeEnabled || !m_drawing || !m_previewRect || event->button() != Qt::LeftButton) {
-        QGraphicsView::mouseReleaseEvent(event);
-        return;
-    }
-
-    const QRectF rect = m_previewRect->rect().normalized();
-
-    if (scene())
-        scene()->removeItem(m_previewRect);
-    delete m_previewRect;
-    m_previewRect = nullptr;
-    m_drawing = false;
-
-    if (rect.width() > 3.0 && rect.height() > 3.0)
-        emit detectionDrawn(rect);
 }
 
 void ImageView::wheelEvent(QWheelEvent *event)
 {
-    if (!scene()) {
-        QGraphicsView::wheelEvent(event);
+    if (!scene() || scene()->sceneRect().isEmpty()) {
+        event->ignore();
         return;
     }
 
-    if (event->angleDelta().y() > 0)
-        applyZoom(1.15);
-    else
-        applyZoom(1.0 / 1.15);
+    const qreal currentScale = transform().m11();
+    constexpr qreal kMinScale = 0.05;
+    constexpr qreal kMaxScale = 32.0;
+
+    if (event->angleDelta().y() > 0) {
+        if (currentScale < kMaxScale)
+            zoomIn();
+    } else {
+        if (currentScale > kMinScale)
+            zoomOut();
+    }
 
     event->accept();
 }
 
-void ImageView::resizeEvent(QResizeEvent *event)
+void ImageView::mousePressEvent(QMouseEvent *event)
 {
-    QGraphicsView::resizeEvent(event);
+    if (m_temporaryPanActive) {
+        QGraphicsView::mousePressEvent(event);
+        return;
+    }
 
-    if (m_fitMode)
-        fitSceneInView();
+    if (m_drawModeEnabled && event->button() == Qt::LeftButton) {
+        m_drawing = true;
+        m_origin = event->pos();
+        m_rubberBand->setGeometry(QRect(m_origin, QSize()));
+        m_rubberBand->show();
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::mousePressEvent(event);
+}
+
+void ImageView::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_drawing) {
+        m_rubberBand->setGeometry(QRect(m_origin, event->pos()).normalized());
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void ImageView::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_drawing && event->button() == Qt::LeftButton) {
+        m_drawing = false;
+        m_rubberBand->hide();
+
+        const QRectF rect = currentSceneRectFromRubberBand();
+        if (rect.isValid() && rect.width() > 3.0 && rect.height() > 3.0)
+            emit detectionDrawn(rect.normalized());
+
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::mouseReleaseEvent(event);
 }
 
 void ImageView::keyPressEvent(QKeyEvent *event)
 {
     if (!event->isAutoRepeat() && event->key() == Qt::Key_Space) {
-        m_spacePressed = true;
-        setTemporaryPanActive(true);
+        setTemporaryPanEnabled(true);
         event->accept();
         return;
     }
@@ -212,8 +142,7 @@ void ImageView::keyPressEvent(QKeyEvent *event)
 void ImageView::keyReleaseEvent(QKeyEvent *event)
 {
     if (!event->isAutoRepeat() && event->key() == Qt::Key_Space) {
-        m_spacePressed = false;
-        setTemporaryPanActive(false);
+        setTemporaryPanEnabled(false);
         event->accept();
         return;
     }
@@ -221,9 +150,32 @@ void ImageView::keyReleaseEvent(QKeyEvent *event)
     QGraphicsView::keyReleaseEvent(event);
 }
 
-void ImageView::focusOutEvent(QFocusEvent *event)
+QRectF ImageView::currentSceneRectFromRubberBand() const
 {
-    m_spacePressed = false;
-    setTemporaryPanActive(false);
-    QGraphicsView::focusOutEvent(event);
+    if (!scene())
+        return QRectF();
+
+    const QRect viewRect = m_rubberBand->geometry();
+    const QPointF topLeft = mapToScene(viewRect.topLeft());
+    const QPointF bottomRight = mapToScene(viewRect.bottomRight());
+
+    return QRectF(topLeft, bottomRight).normalized();
+}
+
+void ImageView::setTemporaryPanEnabled(bool enabled)
+{
+    if (m_temporaryPanActive == enabled)
+        return;
+
+    m_temporaryPanActive = enabled;
+
+    if (enabled) {
+        setDragMode(QGraphicsView::ScrollHandDrag);
+        viewport()->setCursor(Qt::OpenHandCursor);
+    } else {
+        setDragMode(m_drawModeEnabled ? QGraphicsView::NoDrag : QGraphicsView::ScrollHandDrag);
+        viewport()->unsetCursor();
+    }
+
+    emit temporaryPanStateChanged(enabled);
 }

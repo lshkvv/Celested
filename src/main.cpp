@@ -1,93 +1,112 @@
-#include "mainwindow.h"
-
 #include <QApplication>
+#include <QFile>
+#include <QMessageBox>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
-#include <QDebug>
+#include <QStyleFactory>
+#include <QCoreApplication>
+#include <QDir>
+
+#include "applogger.h"
+#include "apptheme.h"
+#include "dbmigrate.h"
+#include "mainwindow.h"
 
 static bool initializeDatabase()
 {
-    QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "objects-connection");
-    db.setDatabaseName("celested.sqlite");
+    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("objects-connection"));
+    db.setDatabaseName(QCoreApplication::applicationDirPath() + QStringLiteral("/objects.db"));
 
     if (!db.open()) {
-        qCritical() << "Failed to open database:" << db.lastError().text();
+        const QString message = QStringLiteral("Failed to open database: %1").arg(db.lastError().text());
+        LOG_ERROR(QStringLiteral("Database"), message);
+        QMessageBox::critical(nullptr, QStringLiteral("Database error"), message);
         return false;
     }
 
-    QSqlQuery query(db);
+    LOG_INFO(QStringLiteral("Database"), QStringLiteral("Opened database at %1").arg(db.databaseName()));
 
-    if (!query.exec(
-            "CREATE TABLE IF NOT EXISTS object_types ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "name TEXT NOT NULL UNIQUE,"
-            "description TEXT"
-            ")")) {
-        qCritical() << query.lastError().text();
+    QFile schemaFile(QCoreApplication::applicationDirPath() + QStringLiteral("/schema.sql"));
+    if (!schemaFile.exists())
+        schemaFile.setFileName(QDir::currentPath() + QStringLiteral("/schema.sql"));
+
+    if (!schemaFile.exists()) {
+        const QString message = QStringLiteral("schema.sql not found.\nChecked:\n%1\n%2")
+                                    .arg(QCoreApplication::applicationDirPath() + QStringLiteral("/schema.sql"))
+                                    .arg(QDir::currentPath() + QStringLiteral("/schema.sql"));
+        LOG_ERROR(QStringLiteral("Database"), message);
+        QMessageBox::critical(nullptr, QStringLiteral("Database error"), message);
         return false;
     }
 
-    if (!query.exec(
-            "CREATE TABLE IF NOT EXISTS images ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "path TEXT NOT NULL,"
-            "title TEXT,"
-            "created_at TEXT"
-            ")")) {
-        qCritical() << query.lastError().text();
+    if (!schemaFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        LOG_ERROR(QStringLiteral("Database"), QStringLiteral("Failed to open schema.sql"));
+        QMessageBox::critical(nullptr, QStringLiteral("Database error"), QStringLiteral("Failed to open schema.sql."));
         return false;
     }
 
-    if (!query.exec(
-            "CREATE TABLE IF NOT EXISTS objects ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "name TEXT NOT NULL,"
-            "type_id INTEGER,"
-            "image_id INTEGER,"
-            "ra TEXT,"
-            "dec TEXT,"
-            "magnitude REAL,"
-            "constellation TEXT,"
-            "FOREIGN KEY(type_id) REFERENCES object_types(id),"
-            "FOREIGN KEY(image_id) REFERENCES images(id)"
-            ")")) {
-        qCritical() << query.lastError().text();
-        return false;
+    const QString schema = QString::fromUtf8(schemaFile.readAll());
+    schemaFile.close();
+
+    const QStringList statements = schema.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+
+    for (QString statement : statements) {
+        statement = statement.trimmed();
+        if (statement.isEmpty())
+            continue;
+
+        QSqlQuery query(db);
+        if (!query.exec(statement)) {
+            const QString message = QStringLiteral("Failed to execute schema statement:\n%1\n\n%2")
+                                      .arg(statement, query.lastError().text());
+            LOG_ERROR(QStringLiteral("Database"), message);
+            QMessageBox::critical(nullptr, QStringLiteral("Database error"), message);
+            return false;
+        }
     }
 
-    if (!query.exec(
-            "CREATE TABLE IF NOT EXISTS detections ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "image_id INTEGER NOT NULL,"
-            "object_id INTEGER,"
-            "x REAL NOT NULL,"
-            "y REAL NOT NULL,"
-            "width REAL NOT NULL,"
-            "height REAL NOT NULL,"
-            "confidence REAL,"
-            "FOREIGN KEY(image_id) REFERENCES images(id),"
-            "FOREIGN KEY(object_id) REFERENCES objects(id)"
-            ")")) {
-        qCritical() << query.lastError().text();
+    LOG_INFO(QStringLiteral("Database"), QStringLiteral("Schema applied successfully."));
+
+    if (!migrateDatabase(db)) {
+        QMessageBox::critical(nullptr,
+                             QStringLiteral("Database error"),
+                             QStringLiteral("Failed to apply database migrations."));
         return false;
     }
-
-    query.exec("INSERT OR IGNORE INTO object_types (id, name, description) VALUES (1, 'Galaxy', 'Galaxy object')");
-    query.exec("INSERT OR IGNORE INTO object_types (id, name, description) VALUES (2, 'Nebula', 'Nebula object')");
-    query.exec("INSERT OR IGNORE INTO object_types (id, name, description) VALUES (3, 'Star', 'Star object')");
 
     return true;
 }
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
+    QApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("Celested"));
+    app.setOrganizationName(QStringLiteral("Celested"));
+    app.setApplicationVersion(QStringLiteral("1.0"));
 
-    if (!initializeDatabase())
-        return -1;
+    AppLogger::instance().initialize();
+
+#ifdef Q_OS_MAC
+    if (QStyle *style = QStyleFactory::create(QStringLiteral("Fusion")))
+        app.setStyle(style);
+#endif
+
+    AppTheme::applyFusionDarkPalette(&app);
+
+    if (!initializeDatabase()) {
+        AppLogger::instance().shutdown();
+        return 1;
+    }
 
     MainWindow w;
+    w.resize(1320, 860);
     w.show();
-    return a.exec();
+
+    LOG_INFO(QStringLiteral("App"), QStringLiteral("Main window shown."));
+    const int code = app.exec();
+
+    LOG_INFO(QStringLiteral("App"), QStringLiteral("Application exiting with code %1.").arg(code));
+    AppLogger::instance().shutdown();
+    return code;
 }

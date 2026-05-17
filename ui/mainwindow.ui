@@ -6,261 +6,254 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1680</width>
-    <height>1020</height>
+    <width>1280</width>
+    <height>820</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>1420</width>
-    <height>900</height>
+    <width>1100</width>
+    <height>700</height>
    </size>
   </property>
   <property name="windowTitle">
-   <string>Astro Annotation Studio</string>
+   <string>Celested — Astro Annotation Studio</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayoutRoot">
     <property name="spacing">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="leftMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="topMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="rightMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="bottomMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
+
     <item>
      <widget class="QFrame" name="topToolbarFrame">
       <property name="frameShape">
        <enum>QFrame::StyledPanel</enum>
       </property>
-      <layout class="QVBoxLayout" name="topToolbarRootLayout">
+      <layout class="QHBoxLayout" name="topToolbarLayout">
        <property name="spacing">
-        <number>6</number>
+        <number>4</number>
        </property>
        <property name="leftMargin">
-        <number>8</number>
+        <number>6</number>
        </property>
        <property name="topMargin">
-        <number>7</number>
+        <number>4</number>
        </property>
        <property name="rightMargin">
-        <number>8</number>
+        <number>6</number>
        </property>
        <property name="bottomMargin">
-        <number>7</number>
+        <number>4</number>
        </property>
+
        <item>
-        <layout class="QHBoxLayout" name="topToolbarRow1Layout">
-         <property name="spacing">
-          <number>6</number>
+        <widget class="QPushButton" name="openImageButton">
+         <property name="text">
+          <string>Open</string>
          </property>
-         <item>
-          <widget class="QLabel" name="brandLabel">
-           <property name="text">
-            <string>Astro Annotation Studio</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="brandSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeType">
-            <enum>QSizePolicy::Fixed</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>16</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QLabel" name="imageToolsLabel">
-           <property name="text">
-            <string>Image</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="openImageButton">
-           <property name="text">
-            <string>Open image</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="drawDetectionButton">
-           <property name="checkable">
-            <bool>true</bool>
-           </property>
-           <property name="text">
-            <string>Draw detection</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="zoomInButton">
-           <property name="text">
-            <string>Zoom in</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="zoomOutButton">
-           <property name="text">
-            <string>Zoom out</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="fitImageButton">
-           <property name="text">
-            <string>Fit image</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="toolbarStretchA">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeType">
-            <enum>QSizePolicy::Expanding</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QLabel" name="canvasHintLabel">
-           <property name="text">
-            <string>Scroll to zoom • Space to pan • Drag to annotate</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
+        </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="topToolbarRow2Layout">
-         <property name="spacing">
-          <number>6</number>
+        <widget class="QPushButton" name="analyzeSkyButton">
+         <property name="text">
+          <string>Analyze</string>
          </property>
-         <item>
-          <widget class="QLabel" name="ioToolsLabel">
-           <property name="text">
-            <string>Import / Export</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="exportJsonButton">
-           <property name="text">
-            <string>Export JSON</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="importJsonButton">
-           <property name="text">
-            <string>Import JSON</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="exportYoloButton">
-           <property name="text">
-            <string>Export YOLO</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="toolbarGap">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeType">
-            <enum>QSizePolicy::Fixed</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>18</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QLabel" name="validationToolsLabel">
-           <property name="text">
-            <string>Validation</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="validateButton">
-           <property name="text">
-            <string>Validate</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="clampDetectionButton">
-           <property name="text">
-            <string>Clamp selected bbox</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="deleteInvalidDetectionButton">
-           <property name="text">
-            <string>Delete invalid bbox</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="toolbarStretchB">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeType">
-            <enum>QSizePolicy::Expanding</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-        </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="drawDetectionButton">
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <property name="text">
+          <string>Draw</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="toolbarSep1">
+         <property name="frameShape">
+          <enum>QFrame::VLine</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Sunken</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="validateButton">
+         <property name="text">
+          <string>Validate</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="linkDetectionButton">
+         <property name="text">
+          <string>Assign</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="deleteDetectionButton">
+         <property name="text">
+          <string>Delete</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="focusDetectionButton">
+         <property name="text">
+          <string>Focus</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="clampDetectionButton">
+         <property name="text">
+          <string>Clamp</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="deleteInvalidDetectionButton">
+         <property name="text">
+          <string>Drop invalid</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="toolbarSep2">
+         <property name="frameShape">
+          <enum>QFrame::VLine</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Sunken</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="fitImageButton">
+         <property name="text">
+          <string>Fit</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="zoomInButton">
+         <property name="minimumSize">
+          <size>
+           <width>32</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>36</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>+</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="zoomOutButton">
+         <property name="minimumSize">
+          <size>
+           <width>32</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>36</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>−</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="toolbarSep3">
+         <property name="frameShape">
+          <enum>QFrame::VLine</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Sunken</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="importJsonButton">
+         <property name="text">
+          <string>Import</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="exportJsonButton">
+         <property name="text">
+          <string>JSON</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="exportYoloButton">
+         <property name="text">
+          <string>YOLO</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="toolbarSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>8</width>
+           <height>0</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="canvasHintLabel">
+         <property name="text">
+          <string>Space pan · Wheel zoom · F fit · Esc draw</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignVCenter</set>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>
     </item>
+
     <item>
      <widget class="QSplitter" name="mainSplitter">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <property name="childrenCollapsible">
-       <bool>false</bool>
-      </property>
+
       <widget class="QFrame" name="imagePanelFrame">
        <property name="frameShape">
         <enum>QFrame::StyledPanel</enum>
@@ -281,9 +274,16 @@
         <property name="bottomMargin">
          <number>8</number>
         </property>
+
         <item>
          <widget class="QFrame" name="imagePanelHeaderFrame">
+          <property name="frameShape">
+           <enum>QFrame::NoFrame</enum>
+          </property>
           <layout class="QHBoxLayout" name="imagePanelHeaderLayout">
+           <property name="spacing">
+            <number>8</number>
+           </property>
            <property name="leftMargin">
             <number>0</number>
            </property>
@@ -299,17 +299,14 @@
            <item>
             <widget class="QLabel" name="imagePanelLabel">
              <property name="text">
-              <string>Celestial canvas</string>
+              <string>Image canvas</string>
              </property>
             </widget>
            </item>
            <item>
-            <spacer name="imageHeaderStretch">
+            <spacer name="imageHeaderSpacer">
              <property name="orientation">
               <enum>Qt::Horizontal</enum>
-             </property>
-             <property name="sizeType">
-              <enum>QSizePolicy::Expanding</enum>
              </property>
              <property name="sizeHint" stdset="0">
               <size>
@@ -322,41 +319,43 @@
            <item>
             <widget class="QLabel" name="sceneMetaLabel">
              <property name="text">
-              <string>Main annotation workspace</string>
+              <string>No image loaded</string>
              </property>
             </widget>
            </item>
           </layout>
          </widget>
         </item>
+
         <item>
          <widget class="ImageView" name="imageView"/>
         </item>
-       </layout>
-      </widget>
-      <widget class="QFrame" name="rightPanelFrame">
-       <property name="frameShape">
-        <enum>QFrame::StyledPanel</enum>
-       </property>
-       <layout class="QVBoxLayout" name="rightPanelLayout">
-        <property name="spacing">
-         <number>8</number>
-        </property>
-        <property name="leftMargin">
-         <number>8</number>
-        </property>
-        <property name="topMargin">
-         <number>8</number>
-        </property>
-        <property name="rightMargin">
-         <number>8</number>
-        </property>
-        <property name="bottomMargin">
-         <number>8</number>
-        </property>
+
         <item>
          <widget class="QFrame" name="statsFrame">
-          <layout class="QGridLayout" name="statsLayout">
+          <property name="frameShape">
+           <enum>QFrame::NoFrame</enum>
+          </property>
+          <layout class="QGridLayout" name="statsGridLayout">
+           <property name="horizontalSpacing">
+            <number>16</number>
+           </property>
+           <property name="verticalSpacing">
+            <number>2</number>
+           </property>
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+
            <item row="0" column="0">
             <widget class="QLabel" name="statsImageTitleLabel">
              <property name="text">
@@ -378,6 +377,7 @@
              </property>
             </widget>
            </item>
+
            <item row="1" column="0">
             <widget class="QLabel" name="currentImageValueLabel">
              <property name="text">
@@ -402,205 +402,254 @@
           </layout>
          </widget>
         </item>
+       </layout>
+      </widget>
+
+      <widget class="QFrame" name="rightPanelFrame">
+       <property name="minimumSize">
+        <size>
+         <width>520</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>620</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::StyledPanel</enum>
+       </property>
+       <layout class="QVBoxLayout" name="rightPanelLayout">
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <property name="leftMargin">
+         <number>8</number>
+        </property>
+        <property name="topMargin">
+         <number>8</number>
+        </property>
+        <property name="rightMargin">
+         <number>8</number>
+        </property>
+        <property name="bottomMargin">
+         <number>8</number>
+        </property>
+
         <item>
          <widget class="QTabWidget" name="rightTabWidget">
           <property name="currentIndex">
            <number>0</number>
           </property>
-          <widget class="QWidget" name="catalogTab">
+
+          <widget class="QWidget" name="projectTab">
            <attribute name="title">
-            <string>Catalog</string>
+            <string>Project</string>
            </attribute>
-           <layout class="QVBoxLayout" name="catalogTabLayout">
+           <layout class="QVBoxLayout" name="projectTabLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
             <item>
-             <widget class="QGroupBox" name="typesGroupBox">
-              <property name="title">
-               <string>Object types</string>
+             <widget class="QTableView" name="typesTableView"/>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="typesButtonsLayout">
+              <property name="spacing">
+               <number>8</number>
               </property>
-              <layout class="QVBoxLayout" name="typesGroupLayout">
-               <item>
-                <layout class="QHBoxLayout" name="typesButtonsLayout">
-                 <item>
-                  <widget class="QPushButton" name="addTypeButton">
-                   <property name="text">
-                    <string>Add type</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="deleteTypeButton">
-                   <property name="text">
-                    <string>Delete type</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <spacer name="typesStretch">
-                   <property name="orientation">
-                    <enum>Qt::Horizontal</enum>
-                   </property>
-                   <property name="sizeType">
-                    <enum>QSizePolicy::Expanding</enum>
-                   </property>
-                   <property name="sizeHint" stdset="0">
-                    <size>
-                     <width>40</width>
-                     <height>20</height>
-                    </size>
-                   </property>
-                  </spacer>
-                 </item>
-                </layout>
-               </item>
-               <item>
-                <widget class="QTableView" name="typesTableView"/>
-               </item>
-              </layout>
+              <item>
+               <widget class="QPushButton" name="addTypeButton">
+                <property name="text">
+                 <string>Add type</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="deleteTypeButton">
+                <property name="text">
+                 <string>Delete type</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+
+          <widget class="QWidget" name="guideTab">
+           <attribute name="title">
+            <string>Guide</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="guideTabLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="guideSummaryTitleLabel">
+              <property name="text">
+               <string>Selected object</string>
+              </property>
              </widget>
             </item>
             <item>
-             <widget class="QGroupBox" name="objectsGroupBox">
-              <property name="title">
-               <string>Objects</string>
+             <widget class="QPlainTextEdit" name="guideSummaryEdit">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>120</height>
+               </size>
               </property>
-              <layout class="QVBoxLayout" name="objectsGroupLayout">
-               <item>
-                <layout class="QHBoxLayout" name="objectsButtonsLayout">
-                 <item>
-                  <widget class="QPushButton" name="addObjectButton">
-                   <property name="text">
-                    <string>Add object</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="deleteObjectButton">
-                   <property name="text">
-                    <string>Delete object</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <spacer name="objectsStretch">
-                   <property name="orientation">
-                    <enum>Qt::Horizontal</enum>
-                   </property>
-                   <property name="sizeType">
-                    <enum>QSizePolicy::Expanding</enum>
-                   </property>
-                   <property name="sizeHint" stdset="0">
-                    <size>
-                     <width>40</width>
-                     <height>20</height>
-                    </size>
-                   </property>
-                  </spacer>
-                 </item>
-                </layout>
-               </item>
-               <item>
-                <widget class="QTableView" name="objectsTableView"/>
-               </item>
-              </layout>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>160</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="chatHistoryTitleLabel">
+              <property name="text">
+               <string>Chat</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPlainTextEdit" name="chatHistoryEdit"/>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="chatInputLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLineEdit" name="chatInputEdit">
+                <property name="placeholderText">
+                 <string>Ask about the selected object…</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="sendChatButton">
+                <property name="text">
+                 <string>Send</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="llmHintLabel">
+              <property name="text">
+               <string>LLM: set CELESTED_LLM_API_KEY to enable the guide.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
              </widget>
             </item>
            </layout>
           </widget>
+
+          <widget class="QWidget" name="catalogTab">
+           <attribute name="title">
+            <string>Objects</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="catalogTabLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <layout class="QHBoxLayout" name="objectsButtonsLayout">
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <item>
+               <widget class="QPushButton" name="addObjectButton">
+                <property name="text">
+                 <string>Add object</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="deleteObjectButton">
+                <property name="text">
+                 <string>Delete object</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QTableView" name="objectsTableView"/>
+            </item>
+           </layout>
+          </widget>
+
           <widget class="QWidget" name="detectionsTab">
            <attribute name="title">
             <string>Detections</string>
            </attribute>
            <layout class="QVBoxLayout" name="detectionsTabLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
             <item>
-             <widget class="QGroupBox" name="detectionsGroupBox">
-              <property name="title">
-               <string>Detection list</string>
+             <layout class="QHBoxLayout" name="detectionsInlineButtonsLayout">
+              <property name="spacing">
+               <number>8</number>
               </property>
-              <layout class="QVBoxLayout" name="detectionsGroupLayout">
-               <item>
-                <layout class="QHBoxLayout" name="detectionsButtonsLayout">
-                 <item>
-                  <widget class="QPushButton" name="linkDetectionButton">
-                   <property name="text">
-                    <string>Link to selected object</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="deleteDetectionButton">
-                   <property name="text">
-                    <string>Delete detection</string>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
-               </item>
-               <item>
-                <widget class="QTableView" name="detectionsTableView"/>
-               </item>
-              </layout>
-             </widget>
+              <item>
+               <widget class="QPushButton" name="clampDetectionButtonInline">
+                <property name="text">
+                 <string>Clamp bbox</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="deleteInvalidDetectionButtonInline">
+                <property name="text">
+                 <string>Delete invalid bbox</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="detectionsInlineSpacer">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
             </item>
             <item>
-             <widget class="QGroupBox" name="quickActionsGroupBox">
-              <property name="title">
-               <string>Quick actions</string>
-              </property>
-              <layout class="QVBoxLayout" name="quickActionsLayout">
-               <item>
-                <widget class="QPushButton" name="focusDetectionButton">
-                 <property name="text">
-                  <string>Focus selected detection</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="clampDetectionButtonInline">
-                 <property name="text">
-                  <string>Clamp selected bbox to image</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="deleteInvalidDetectionButtonInline">
-                 <property name="text">
-                  <string>Delete selected invalid bbox</string>
-                 </property>
-                </widget>
-               </item>
-              </layout>
-             </widget>
+             <widget class="QTableView" name="detectionsTableView"/>
             </item>
            </layout>
           </widget>
+
           <widget class="QWidget" name="inspectorTab">
            <attribute name="title">
             <string>Inspector</string>
            </attribute>
            <layout class="QVBoxLayout" name="inspectorTabLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
             <item>
-             <widget class="QGroupBox" name="selectionInfoGroupBox">
-              <property name="title">
-               <string>Selection details</string>
-              </property>
-              <layout class="QVBoxLayout" name="selectionInfoLayout">
-               <item>
-                <widget class="QPlainTextEdit" name="objectInfoEdit"/>
-               </item>
-              </layout>
-             </widget>
+             <widget class="QPlainTextEdit" name="objectInfoEdit"/>
             </item>
             <item>
-             <widget class="QGroupBox" name="validationLogGroupBox">
-              <property name="title">
-               <string>Validation log</string>
-              </property>
-              <layout class="QVBoxLayout" name="validationLogLayout">
-               <item>
-                <widget class="QPlainTextEdit" name="validationLogEdit"/>
-               </item>
-              </layout>
-             </widget>
+             <widget class="QPlainTextEdit" name="validationLogEdit"/>
             </item>
            </layout>
           </widget>
@@ -612,18 +661,10 @@
     </item>
    </layout>
   </widget>
-  <widget class="QMenuBar" name="menubar">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>1680</width>
-     <height>24</height>
-    </rect>
-   </property>
-  </widget>
+  <widget class="QMenuBar" name="menubar"/>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+
  <customwidgets>
   <customwidget>
    <class>ImageView</class>

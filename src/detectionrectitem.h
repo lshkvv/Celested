@@ -3,19 +3,21 @@
 
 #include <QObject>
 #include <QGraphicsRectItem>
-#include <QRectF>
-#include <QPointF>
-#include <QVariant>
 
+class QGraphicsSceneHoverEvent;
 class QGraphicsSceneMouseEvent;
 class QPainter;
+class QStyleOptionGraphicsItem;
+class QWidget;
 
 class DetectionRectItem : public QObject, public QGraphicsRectItem
 {
     Q_OBJECT
 
 public:
-    explicit DetectionRectItem(int detectionId, const QRectF &rect, QGraphicsItem *parent = nullptr);
+    explicit DetectionRectItem(int detectionId,
+                               const QRectF &rect,
+                               QGraphicsItem *parent = nullptr);
 
     int detectionId() const;
 
@@ -29,22 +31,34 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
     void hoverMoveEvent(QGraphicsSceneHoverEvent *event) override;
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+    void paint(QPainter *painter,
+               const QStyleOptionGraphicsItem *option,
+               QWidget *widget = nullptr) override;
 
 private:
-    enum DragMode {
-        NoDrag,
-        MoveDrag,
-        ResizeBottomRight
+    enum Handle {
+        NoHandle,
+        LeftHandle,
+        RightHandle,
+        TopHandle,
+        BottomHandle,
+        TopLeftHandle,
+        TopRightHandle,
+        BottomLeftHandle,
+        BottomRightHandle
     };
 
-    QRectF handleRect() const;
-    void updateCursor(const QPointF &localPos);
+    QRectF handleRect(Handle handle) const;
+    Handle handleAt(const QPointF &pos) const;
+    void updateCursor(const QPointF &pos);
+    QRectF resizedRect(const QPointF &scenePos) const;
+    QRectF normalizedMinimumRect(const QRectF &rect) const;
 
+private:
     int m_detectionId;
-    QPointF m_dragStartPos;
-    QRectF m_initialRect;
-    DragMode m_dragMode;
+    bool m_resizing;
+    Handle m_activeHandle;
+    QRectF m_pressRect;
     qreal m_handleSize;
     qreal m_minSize;
 };

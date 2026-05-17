@@ -1,7 +1,11 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "applogger.h"
+#include "apptheme.h"
 #include "detectionrectitem.h"
 #include "imageview.h"
+#include "llmclient.h"
+#include "skyfielddialog.h"
 
 #include <QSqlDatabase>
 #include <QSqlTableModel>
@@ -9,6 +13,8 @@
 #include <QSqlRelationalDelegate>
 #include <QSqlRelation>
 #include <QSqlQuery>
+#include <QSqlRecord>
+#include <QSqlError>
 #include <QHeaderView>
 #include <QAbstractItemView>
 #include <QFileDialog>
@@ -37,8 +43,14 @@
 #include <QImageReader>
 #include <QStringConverter>
 #include <QMessageBox>
+#include <QDialog>
 #include <QResizeEvent>
 #include <QSizePolicy>
+#include <QLineEdit>
+#include <QMetaType>
+#include <QThread>
+#include <QTextCursor>
+#include <QVariantMap>
 #include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -52,19 +64,24 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    qRegisterMetaType<SkyAnalysisRequest>();
+    qRegisterMetaType<SkyAnalysisResult>();
+
+    setupLogging();
     applyUiPolish();
     applySplitterDefaults();
+    setupInspectorPanel();
+    setupGuidePanel();
+    setupAnalysisWorker();
 
-    ui->objectInfoEdit->setReadOnly(true);
-    ui->validationLogEdit->setReadOnly(true);
-    ui->objectInfoEdit->setPlainText("Open an image to begin.");
-    ui->validationLogEdit->setPlainText("Validation output will appear here.");
     ui->imageView->setScene(imageScene);
 
     QSqlDatabase db = QSqlDatabase::database("objects-connection");
     if (!db.isValid() || !db.isOpen()) {
-        ui->objectInfoEdit->setPlainText("Database is not open.");
-        ui->validationLogEdit->setPlainText("Database is not open.");
+        LOG_ERROR("Database", "Database connection is not available at startup.");
+        ui->objectInfoEdit->setPlainText(tr("Database is not open. Check the activity log for details."));
+        appendActivityLog(tr("Database is not open. Restart the application after fixing configuration."),
+                          LogLevel::Error);
         return;
     }
 
@@ -86,7 +103,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     objectsModel = new QSqlRelationalTableModel(this, db);
     objectsModel->setTable("objects");
-    objectsModel->setEditStrategy(QSqlTableModel::OnFieldChange);
+    objectsModel->setEditStrategy(QSqlTableModel::OnRowChange);
     objectsModel->setRelation(2, QSqlRelation("object_types", "id", "name"));
     objectsModel->select();
     objectsModel->setHeaderData(0, Qt::Horizontal, tr("ID"));
@@ -97,9 +114,15 @@ MainWindow::MainWindow(QWidget *parent)
     objectsModel->setHeaderData(5, Qt::Horizontal, tr("Dec"));
     objectsModel->setHeaderData(6, Qt::Horizontal, tr("Magnitude"));
     objectsModel->setHeaderData(7, Qt::Horizontal, tr("Constellation"));
+    objectsModel->setHeaderData(8, Qt::Horizontal, tr("Messier"));
+    objectsModel->setHeaderData(9, Qt::Horizontal, tr("NGC"));
+    objectsModel->setHeaderData(10, Qt::Horizontal, tr("IC"));
+    objectsModel->setHeaderData(11, Qt::Horizontal, tr("ID status"));
 
     ui->objectsTableView->setModel(objectsModel);
     ui->objectsTableView->setItemDelegate(new QSqlRelationalDelegate(ui->objectsTableView));
+    ui->objectsTableView->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::AnyKeyPressed
+                                          | QAbstractItemView::EditKeyPressed | QAbstractItemView::SelectedClicked);
     ui->objectsTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->objectsTableView->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->objectsTableView->setColumnHidden(0, true);
@@ -165,7 +188,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->focusDetectionButton, &QPushButton::clicked, this, &MainWindow::focusSelectedDetection);
 
     connect(ui->openImageButton, &QPushButton::clicked, this, &MainWindow::openImage);
+    connect(ui->analyzeSkyButton, &QPushButton::clicked, this, &MainWindow::analyzeSky);
     connect(ui->drawDetectionButton, &QPushButton::toggled, this, &MainWindow::toggleDrawMode);
+    connect(ui->sendChatButton, &QPushButton::clicked, this, &MainWindow::sendChatMessage);
+    connect(ui->chatInputEdit, &QLineEdit::returnPressed, this, &MainWindow::sendChatMessage);
 
     connect(ui->zoomInButton, &QPushButton::clicked, ui->imageView, &ImageView::zoomIn);
     connect(ui->zoomOutButton, &QPushButton::clicked, ui->imageView, &ImageView::zoomOut);
@@ -182,35 +208,37 @@ MainWindow::MainWindow(QWidget *parent)
             &QItemSelectionModel::currentRowChanged,
             this, &MainWindow::handleDetectionSelection);
 
+    applyCatalogFiltersForCurrentImage();
+    ui->rightTabWidget->setTabText(ui->rightTabWidget->indexOf(ui->inspectorTab), tr("Activity"));
+
     setupShortcuts();
     updateQuickStats();
     refreshActionStates();
 
     statusBar()->showMessage(
-        "Ready. Shortcuts: Delete — remove detection, F — fit image, +/- — zoom, Esc — exit draw mode, Space — pan."
-        );
+        tr("Ready — Delete: remove detection, F: fit, +/-: zoom, Esc: exit draw, Space: pan."));
+
+    QTimer::singleShot(0, this, [this]() {
+        appendActivityLog(tr("Celested ready. Open an image to start annotating."));
+        LOG_INFO("App", "Main window initialized.");
+    });
 }
 
 MainWindow::~MainWindow()
 {
+    AppLogger::instance().setUiSink(nullptr);
+
+    if (m_analysisThread) {
+        m_analysisThread->quit();
+        m_analysisThread->wait(3000);
+    }
+
     delete ui;
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
-
-    if (currentImageId >= 0 && !ui->drawDetectionButton->isChecked()) {
-        static QTimer *resizeFitTimer = nullptr;
-        if (!resizeFitTimer) {
-            resizeFitTimer = new QTimer(this);
-            resizeFitTimer->setSingleShot(true);
-            connect(resizeFitTimer, &QTimer::timeout, this, [this]() {
-                fitImageIfAvailable();
-            });
-        }
-        resizeFitTimer->start(70);
-    }
 }
 
 void MainWindow::applyUiPolish()
@@ -220,254 +248,152 @@ void MainWindow::applyUiPolish()
     ui->imageView->setMinimumWidth(860);
     ui->imageView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
-    setStyleSheet(R"(
-        QMainWindow, QWidget {
-            background: #070b14;
-            color: #e7eeff;
-            font-size: 13px;
-        }
+    ui->topToolbarFrame->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    ui->topToolbarFrame->setMaximumHeight(52);
 
-        QFrame#topToolbarFrame,
-        QFrame#imagePanelFrame,
-        QFrame#rightPanelFrame {
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #0c1223,
-                stop:0.55 #101938,
-                stop:1 #16153a
-            );
-            border: 1px solid #2c3768;
-            border-radius: 12px;
-        }
+    for (QPushButton *button : ui->topToolbarFrame->findChildren<QPushButton *>()) {
+        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    }
 
-        QFrame#imagePanelHeaderFrame,
-        QFrame#statsFrame {
-            background: transparent;
-            border: none;
-        }
+    ui->canvasHintLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
-        QLabel#brandLabel {
-            color: #f2f5ff;
-            font-size: 15px;
-            font-weight: 700;
-        }
+    setStyleSheet(AppTheme::applicationStyleSheet());
+    ui->imageView->setStyleSheet(AppTheme::imageViewStyleSheet());
+}
 
-        QLabel#imageToolsLabel,
-        QLabel#ioToolsLabel,
-        QLabel#validationToolsLabel,
-        QLabel#imagePanelLabel {
-            color: #8ca8ff;
-            font-weight: 600;
-        }
+void MainWindow::setupGuidePanel()
+{
+    ui->guideSummaryEdit->setReadOnly(true);
+    ui->chatHistoryEdit->setReadOnly(true);
+    ui->guideSummaryEdit->setPlaceholderText(tr("Select an object to see its summary."));
+    ui->chatHistoryEdit->setPlaceholderText(tr("Ask questions about the selected object."));
 
-        QLabel#canvasHintLabel,
-        QLabel#sceneMetaLabel {
-            color: #7f91c7;
-        }
+    m_llmClient = new LlmClient(this);
+    connect(m_llmClient, &LlmClient::replyReady, this, &MainWindow::onLlmReply);
+    connect(m_llmClient, &LlmClient::errorOccurred, this, &MainWindow::onLlmError);
 
-        QLabel#statsImageTitleLabel,
-        QLabel#statsObjectsTitleLabel,
-        QLabel#statsDetectionsTitleLabel {
-            color: #87a0ff;
-            font-size: 11px;
-            font-weight: 600;
-        }
+    if (m_llmClient->isConfigured()) {
+        ui->llmHintLabel->setText(tr("LLM guide is ready."));
+    } else {
+        ui->llmHintLabel->setText(
+            tr("Set CELESTED_LLM_API_KEY (and optionally CELESTED_LLM_API_URL / CELESTED_LLM_MODEL) to chat."));
+    }
+}
 
-        QLabel#currentImageValueLabel,
-        QLabel#objectsCountValueLabel,
-        QLabel#detectionsCountValueLabel {
-            color: #f0f4ff;
-            font-size: 18px;
-            font-weight: 700;
-            padding: 2px 6px 6px 0;
-        }
+void MainWindow::setupAnalysisWorker()
+{
+    m_analysisThread = new QThread(this);
+    m_imageAnalyzer = new ImageAnalyzer();
+    m_imageAnalyzer->moveToThread(m_analysisThread);
+    connect(m_imageAnalyzer, &ImageAnalyzer::finished, this, &MainWindow::onAnalysisFinished);
+    connect(m_analysisThread, &QThread::finished, m_imageAnalyzer, &QObject::deleteLater);
+    m_analysisThread->start();
+}
 
-        QPushButton {
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #151d36,
-                stop:1 #1c2648
-            );
-            color: #eaf0ff;
-            border: 1px solid #344070;
-            border-radius: 8px;
-            padding: 4px 10px;
-            min-height: 24px;
-        }
+void MainWindow::setupInspectorPanel()
+{
+    ui->objectInfoEdit->setReadOnly(true);
+    ui->validationLogEdit->setReadOnly(true);
+    ui->objectInfoEdit->setPlaceholderText(tr("Select an object or detection to see details."));
+    ui->validationLogEdit->setPlaceholderText(tr("Activity and validation messages appear here."));
+    ui->objectInfoEdit->setPlainText(
+        tr("Welcome to Celested.\n\nOpen an astrophoto, draw detections, link them to catalog objects, "
+           "then validate and export."));
+    ui->validationLogEdit->clear();
 
-        QPushButton:hover {
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #1a2853,
-                stop:1 #24356a
-            );
-            border: 1px solid #5aa7ff;
-        }
+    ui->canvasHintLabel->setText(tr("Space pan · Wheel zoom · F fit · Esc draw"));
+}
 
-        QPushButton:pressed {
-            background: #28396d;
-            border: 1px solid #83ccff;
-        }
+void MainWindow::setupLogging()
+{
+    AppLogger::instance().setUiSink([this](LogLevel level, const QString &message) {
+        QMetaObject::invokeMethod(
+            this,
+            [this, level, message]() { appendActivityLog(message, level); },
+            Qt::QueuedConnection);
+    });
+}
 
-        QPushButton:checked {
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #352266,
-                stop:1 #4f2f96
-            );
-            border: 1px solid #a46bff;
-            color: #faf3ff;
-            font-weight: 600;
-        }
+void MainWindow::appendActivityLog(const QString &message, LogLevel level)
+{
+    Q_UNUSED(level)
 
-        QPushButton:disabled {
-            background: #101827;
-            color: #7080aa;
-            border: 1px solid #25304f;
-        }
+    if (!ui || !ui->validationLogEdit)
+        return;
 
-        QPushButton#openImageButton,
-        QPushButton#validateButton,
-        QPushButton#exportYoloButton,
-        QPushButton#focusDetectionButton {
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #3b2477,
-                stop:1 #6138c0
-            );
-            border: 1px solid #9a7eff;
-            color: #f9f4ff;
-            font-weight: 600;
-        }
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss"));
+    const QString line = QStringLiteral("[%1] %2").arg(timestamp, message);
 
-        QPushButton#deleteDetectionButton,
-        QPushButton#deleteInvalidDetectionButton,
-        QPushButton#deleteInvalidDetectionButtonInline,
-        QPushButton#deleteTypeButton,
-        QPushButton#deleteObjectButton {
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #35142d,
-                stop:1 #511a3d
-            );
-            border: 1px solid #8f416f;
-            color: #ffdcef;
-        }
+    QPlainTextEdit *logEdit = ui->validationLogEdit;
 
-        QGroupBox {
-            border: 1px solid #2e3866;
-            border-radius: 11px;
-            margin-top: 8px;
-            padding-top: 6px;
-            background: qlineargradient(
-                x1:0, y1:0, x2:1, y2:1,
-                stop:0 #0e152a,
-                stop:1 #141d38
-            );
-            font-weight: 600;
-        }
+    if (logEdit->document()->blockCount() > kMaxActivityLogLines) {
+        const QString trimmed = logEdit->toPlainText();
+        const QStringList lines = trimmed.split(QLatin1Char('\n'));
+        logEdit->setPlainText(lines.mid(lines.size() / 4).join(QLatin1Char('\n')));
+    }
 
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 8px;
-            padding: 0 6px;
-            color: #bdd0ff;
-            background: transparent;
-        }
+    logEdit->appendPlainText(line);
 
-        QTabWidget::pane {
-            border: 1px solid #2d3866;
-            border-radius: 10px;
-            top: -1px;
-            background: #0b1020;
-        }
+    QTextCursor cursor = logEdit->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    logEdit->setTextCursor(cursor);
+}
 
-        QTabBar::tab {
-            background: #131c37;
-            color: #9fb4eb;
-            border: 1px solid #2e3968;
-            padding: 8px 14px;
-            min-width: 92px;
-            border-top-left-radius: 8px;
-            border-top-right-radius: 8px;
-            margin-right: 4px;
-        }
+void MainWindow::applyCatalogFiltersForCurrentImage()
+{
+    if (!objectsModel || !detectionsModel)
+        return;
 
-        QTabBar::tab:selected {
-            background: #1d2a54;
-            color: #f4f7ff;
-            border-color: #5977d9;
-            font-weight: 600;
-        }
+    if (currentImageId < 0) {
+        objectsModel->setFilter(QStringLiteral("image_id < 0"));
+        detectionsModel->setFilter(QStringLiteral("image_id < 0"));
+    } else {
+        objectsModel->setFilter(QStringLiteral("image_id = %1").arg(currentImageId));
+        detectionsModel->setFilter(QStringLiteral("image_id = %1").arg(currentImageId));
+    }
 
-        QTableView {
-            background: #09101d;
-            alternate-background-color: #0d1630;
-            color: #e8efff;
-            border: 1px solid #2b3562;
-            border-radius: 9px;
-            selection-background-color: #3f2d7b;
-            selection-color: #ffffff;
-            outline: 0;
-        }
+    objectsModel->select();
+    detectionsModel->select();
+}
 
-        QTableView::item {
-            padding: 6px;
-            background: transparent;
-        }
+int MainWindow::resolveImageRecord(const QString &path)
+{
+    QSqlDatabase db = QSqlDatabase::database(QStringLiteral("objects-connection"));
+    if (!db.isValid() || !db.isOpen())
+        return -1;
 
-        QHeaderView::section {
-            background: qlineargradient(
-                x1:0, y1:0, x2:0, y2:1,
-                stop:0 #172346,
-                stop:1 #121c39
-            );
-            color: #acd0ff;
-            padding: 6px 8px;
-            border: none;
-            border-right: 1px solid #2d3766;
-            border-bottom: 1px solid #2d3766;
-            font-weight: 600;
-        }
+    QSqlQuery findQuery(db);
+    findQuery.prepare(QStringLiteral("SELECT id FROM images WHERE path = :path LIMIT 1"));
+    findQuery.bindValue(QStringLiteral(":path"), path);
 
-        QPlainTextEdit {
-            background: #09101d;
-            color: #dfe7ff;
-            border: 1px solid #2b3562;
-            border-radius: 9px;
-            padding: 8px;
-            selection-background-color: #4d34a0;
-            selection-color: #ffffff;
-        }
+    if (findQuery.exec() && findQuery.next()) {
+        const int existingId = findQuery.value(0).toInt();
+        LOG_INFO("Database", QStringLiteral("Reusing existing image record id=%1 for %2")
+                                .arg(existingId)
+                                .arg(path));
+        return existingId;
+    }
 
-        QSplitter::handle {
-            background: #1a2340;
-        }
+    QSqlQuery insertQuery(db);
+    insertQuery.prepare(
+        QStringLiteral("INSERT INTO images (path, title, created_at) VALUES (:path, :title, datetime('now'))"));
+    insertQuery.bindValue(QStringLiteral(":path"), path);
+    insertQuery.bindValue(QStringLiteral(":title"), QFileInfo(path).fileName());
 
-        QSplitter::handle:horizontal {
-            width: 6px;
-        }
+    if (!insertQuery.exec()) {
+        logSqlFailure(QStringLiteral("insert image"), insertQuery);
+        return -1;
+    }
 
-        QStatusBar {
-            background: #0a1020;
-            color: #b8c7f3;
-            border-top: 1px solid #232d55;
-        }
-    )");
+    const int newId = insertQuery.lastInsertId().toInt();
+    LOG_INFO("Database", QStringLiteral("Created image record id=%1 for %2").arg(newId).arg(path));
+    return newId;
+}
 
-    ui->imageView->setStyleSheet(R"(
-        QGraphicsView {
-            background: qradialgradient(
-                cx:0.5, cy:0.45, radius:1.08,
-                fx:0.5, fy:0.45,
-                stop:0 #16203e,
-                stop:0.48 #0d1327,
-                stop:1 #05070c
-            );
-            border: 1px solid #2b3562;
-            border-radius: 10px;
-        }
-    )");
+void MainWindow::logSqlFailure(const QString &operation, const QSqlQuery &query) const
+{
+    LOG_ERROR("Database",
+              QStringLiteral("%1 failed: %2").arg(operation, query.lastError().text()));
 }
 
 void MainWindow::applySplitterDefaults()
@@ -493,7 +419,7 @@ void MainWindow::setupShortcuts()
 {
     auto *deleteShortcut = new QShortcut(QKeySequence::Delete, this);
     connect(deleteShortcut, &QShortcut::activated, this, [this]() {
-        if (currentSelectedDetectionId() > 0)
+        if (currentSelectedDetectionId() >= 0)
             deleteCurrentDetection();
     });
 
@@ -543,12 +469,13 @@ bool MainWindow::hasLoadedImage() const
 void MainWindow::refreshActionStates()
 {
     const bool imageLoaded = hasLoadedImage();
-    const bool hasObject = currentSelectedObjectId() > 0;
-    const bool hasDetection = currentSelectedDetectionId() > 0;
+    const bool hasObject = currentSelectedObjectId() >= 0;
+    const bool hasDetection = currentSelectedDetectionId() >= 0;
 
     QStringList invalidIssues;
     const bool selectedDetectionInvalid = selectedDetectionIsInvalid(&invalidIssues);
 
+    ui->analyzeSkyButton->setEnabled(imageLoaded && !m_analysisRunning);
     ui->drawDetectionButton->setEnabled(imageLoaded);
     ui->zoomInButton->setEnabled(imageLoaded);
     ui->zoomOutButton->setEnabled(imageLoaded);
@@ -573,6 +500,11 @@ void MainWindow::refreshActionStates()
 
     ui->deleteInvalidDetectionButton->setEnabled(hasDetection && selectedDetectionInvalid);
     ui->deleteInvalidDetectionButtonInline->setEnabled(hasDetection && selectedDetectionInvalid);
+
+    ui->analyzeSkyButton->setToolTip(
+        imageLoaded
+            ? tr("Search SIMBAD for objects in this field and place them on the image.")
+            : tr("Open an image first."));
 
     if (!imageLoaded) {
         ui->drawDetectionButton->setToolTip("Open an image first.");
@@ -639,35 +571,45 @@ void MainWindow::refreshActionStates()
 
 void MainWindow::switchInspectorToLog(const QString &text)
 {
-    ui->validationLogEdit->setPlainText(text);
+    appendActivityLog(text);
     ui->rightTabWidget->setCurrentWidget(ui->inspectorTab);
 }
 
 void MainWindow::updateQuickStats()
 {
-    ui->objectsCountValueLabel->setText(QString::number(objectsModel ? objectsModel->rowCount() : 0));
-    ui->detectionsCountValueLabel->setText(QString::number(detectionsModel ? detectionsModel->rowCount() : 0));
+    const int objectCount = (objectsModel && currentImageId >= 0) ? objectsModel->rowCount() : 0;
+    const int detectionCount = (detectionsModel && currentImageId >= 0) ? detectionsModel->rowCount() : 0;
+
+    ui->objectsCountValueLabel->setText(QString::number(objectCount));
+    ui->detectionsCountValueLabel->setText(QString::number(detectionCount));
 
     if (currentImageId < 0) {
-        ui->currentImageValueLabel->setText("—");
+        ui->currentImageValueLabel->setText(QStringLiteral("—"));
+        ui->sceneMetaLabel->setText(tr("No image loaded"));
         return;
     }
 
-    QSqlDatabase db = QSqlDatabase::database("objects-connection");
+    QSqlDatabase db = QSqlDatabase::database(QStringLiteral("objects-connection"));
     if (!db.isValid() || !db.isOpen()) {
-        ui->currentImageValueLabel->setText("—");
+        ui->currentImageValueLabel->setText(QStringLiteral("—"));
+        ui->sceneMetaLabel->setText(tr("Database unavailable"));
         return;
     }
 
     QSqlQuery query(db);
-    query.prepare("SELECT title FROM images WHERE id = :id LIMIT 1");
-    query.bindValue(":id", currentImageId);
+    query.prepare(QStringLiteral("SELECT title, path FROM images WHERE id = :id LIMIT 1"));
+    query.bindValue(QStringLiteral(":id"), currentImageId);
 
     if (query.exec() && query.next()) {
         const QString title = query.value(0).toString().trimmed();
-        ui->currentImageValueLabel->setText(title.isEmpty() ? QString::number(currentImageId) : title);
+        const QString path = query.value(1).toString();
+        const QString displayTitle = title.isEmpty() ? QFileInfo(path).fileName() : title;
+        ui->currentImageValueLabel->setText(displayTitle);
+        ui->sceneMetaLabel->setText(
+            tr("%1 · %2 objects · %3 detections").arg(displayTitle).arg(objectCount).arg(detectionCount));
     } else {
         ui->currentImageValueLabel->setText(QString::number(currentImageId));
+        ui->sceneMetaLabel->setText(tr("Image #%1").arg(currentImageId));
     }
 }
 
@@ -1068,9 +1010,10 @@ void MainWindow::deleteCurrentType()
 
     typesModel->removeRow(index.row());
     typesModel->select();
+    LOG_INFO("Catalog", QStringLiteral("Deleted type \"%1\"").arg(typeName));
     updateQuickStats();
     refreshActionStates();
-    showStatusHint("Type deleted.");
+    showStatusHint(tr("Type deleted."));
 }
 
 void MainWindow::addObject()
@@ -1078,19 +1021,36 @@ void MainWindow::addObject()
     if (!objectsModel || currentImageId < 0)
         return;
 
-    const int row = objectsModel->rowCount();
-    if (!objectsModel->insertRow(row))
+    QSqlRecord record = objectsModel->record();
+    record.setValue(QStringLiteral("image_id"), currentImageId);
+    record.setValue(QStringLiteral("name"), QString());
+
+    if (!objectsModel->insertRecord(-1, record)) {
+        LOG_ERROR("Catalog",
+                  QStringLiteral("Failed to add object: %1").arg(objectsModel->lastError().text()));
+        QMessageBox::warning(this,
+                             tr("Add object"),
+                             tr("Could not create object:\n%1").arg(objectsModel->lastError().text()));
         return;
+    }
 
-    objectsModel->setData(objectsModel->index(row, 3), currentImageId);
-
+    const int row = objectsModel->rowCount() - 1;
     const QModelIndex nameIndex = objectsModel->index(row, 1);
+
     ui->rightTabWidget->setCurrentWidget(ui->catalogTab);
-    ui->objectsTableView->setCurrentIndex(nameIndex);
-    ui->objectsTableView->edit(nameIndex);
+    ui->objectsTableView->setFocus();
+    ui->objectsTableView->selectRow(row);
+    ui->objectsTableView->scrollTo(nameIndex);
+
+    QTimer::singleShot(0, this, [this, nameIndex]() {
+        ui->objectsTableView->setCurrentIndex(nameIndex);
+        ui->objectsTableView->edit(nameIndex);
+    });
+
     updateQuickStats();
     refreshActionStates();
-    showStatusHint("Object added.");
+    showStatusHint(tr("Enter object name in the table."));
+    LOG_INFO("Catalog", QStringLiteral("Object row created for image_id=%1").arg(currentImageId));
 }
 
 void MainWindow::deleteCurrentObject()
@@ -1130,17 +1090,30 @@ void MainWindow::openImage()
         this,
         tr("Open image"),
         QString(),
-        tr("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)")
+        tr("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)")
         );
 
     if (path.isEmpty())
         return;
 
+    LOG_INFO("UI", QStringLiteral("Opening image: %1").arg(path));
+
     const QPixmap pix(path);
     if (pix.isNull()) {
-        showStatusHint("Failed to load image.");
+        LOG_ERROR("UI", QStringLiteral("Failed to decode image: %1").arg(path));
+        QMessageBox::warning(this, tr("Open image"), tr("Could not load the selected image file."));
+        showStatusHint(tr("Failed to load image."));
         return;
     }
+
+    const int imageId = resolveImageRecord(path);
+    if (imageId < 0) {
+        QMessageBox::warning(this, tr("Open image"), tr("Could not register the image in the database."));
+        showStatusHint(tr("Failed to save image record."));
+        return;
+    }
+
+    currentImageId = imageId;
 
     imageScene->clear();
     detectionItemsById.clear();
@@ -1149,46 +1122,157 @@ void MainWindow::openImage()
     imageScene->setSceneRect(pix.rect());
     fitImageIfAvailable();
 
-    QSqlDatabase db = QSqlDatabase::database("objects-connection");
-    if (!db.isValid() || !db.isOpen()) {
-        showStatusHint("Database is not open.");
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare("INSERT INTO images (path, title, created_at) VALUES (:path, :title, datetime('now'))");
-    query.bindValue(":path", path);
-    query.bindValue(":title", QFileInfo(path).fileName());
-
-    if (!query.exec()) {
-        currentImageId = -1;
-        showStatusHint("Failed to save image record.");
-        return;
-    }
-
-    currentImageId = query.lastInsertId().toInt();
-
-    objectsModel->setFilter(QString("image_id = %1").arg(currentImageId));
-    objectsModel->select();
-
-    detectionsModel->setFilter(QString("image_id = %1").arg(currentImageId));
-    detectionsModel->select();
-
-    createTestDetection();
-    detectionsModel->select();
+    applyCatalogFiltersForCurrentImage();
     loadDetections();
     refreshValidationHighlighting();
     updateQuickStats();
     refreshActionStates();
 
-    const QString msg = QString("Image loaded:\n%1\n\nUse mouse wheel or zoom buttons to inspect details.")
-                            .arg(QFileInfo(path).fileName());
-
-    ui->objectInfoEdit->setPlainText(msg);
-    switchInspectorToLog(QString("Image opened: %1").arg(QFileInfo(path).fileName()));
+    const QString fileName = QFileInfo(path).fileName();
+    ui->objectInfoEdit->setPlainText(
+        tr("Image loaded: %1\n\nDraw detections on the canvas or add catalog objects in the Objects tab.")
+            .arg(fileName));
+    switchInspectorToLog(tr("Image opened: %1 (id %2)").arg(fileName).arg(currentImageId));
     ui->rightTabWidget->setCurrentWidget(ui->inspectorTab);
 
-    showStatusHint(QString("Image loaded: %1").arg(QFileInfo(path).fileName()), 3000);
+    showStatusHint(tr("Image loaded: %1").arg(fileName), 3000);
+}
+
+void MainWindow::analyzeSky()
+{
+    if (currentImageId < 0 || !hasLoadedImage() || m_analysisRunning || !m_imageAnalyzer)
+        return;
+
+    SkyFieldDialog dialog(this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    QSqlDatabase db = QSqlDatabase::database(QStringLiteral("objects-connection"));
+    QSqlQuery imageQuery(db);
+    imageQuery.prepare(QStringLiteral("SELECT path FROM images WHERE id = :id LIMIT 1"));
+    imageQuery.bindValue(QStringLiteral(":id"), currentImageId);
+    if (!imageQuery.exec() || !imageQuery.next()) {
+        QMessageBox::warning(this, tr("Analyze sky"), tr("Could not read the current image."));
+        return;
+    }
+
+    const QRectF sceneRect = imageScene->sceneRect();
+
+    SkyAnalysisRequest request;
+    request.imageId = currentImageId;
+    request.imagePath = imageQuery.value(0).toString();
+    request.centerRaDeg = dialog.centerRaHours() * 15.0;
+    request.centerDecDeg = dialog.centerDecDeg();
+    request.fieldRadiusDeg = dialog.fieldRadiusDeg();
+    request.imageWidth = static_cast<int>(sceneRect.width());
+    request.imageHeight = static_cast<int>(sceneRect.height());
+    request.replaceExisting = true;
+
+    m_analysisRunning = true;
+    ui->analyzeSkyButton->setEnabled(false);
+    showStatusHint(tr("Searching SIMBAD and placing objects…"));
+    switchInspectorToLog(tr("Sky analysis started (RA=%1°, Dec=%2°, radius=%3°).")
+                             .arg(request.centerRaDeg, 0, 'f', 3)
+                             .arg(request.centerDecDeg, 0, 'f', 3)
+                             .arg(request.fieldRadiusDeg, 0, 'f', 3));
+
+    QMetaObject::invokeMethod(
+        m_imageAnalyzer,
+        "analyze",
+        Qt::QueuedConnection,
+        Q_ARG(SkyAnalysisRequest, request));
+}
+
+void MainWindow::onAnalysisFinished(const SkyAnalysisResult &result)
+{
+    m_analysisRunning = false;
+    refreshActionStates();
+
+    if (!result.success) {
+        QMessageBox::warning(this, tr("Analyze sky"), result.message);
+        switchInspectorToLog(tr("Analysis failed: %1").arg(result.message));
+        showStatusHint(tr("Analysis failed."));
+        return;
+    }
+
+    typesModel->select();
+    applyCatalogFiltersForCurrentImage();
+    loadDetections();
+    refreshValidationHighlighting();
+    updateQuickStats();
+    refreshActionStates();
+
+    switchInspectorToLog(result.message);
+    showStatusHint(result.message, 4000);
+    ui->rightTabWidget->setCurrentWidget(ui->catalogTab);
+
+    if (objectsModel->rowCount() > 0) {
+        const QModelIndex first = objectsModel->index(0, 1);
+        ui->objectsTableView->setCurrentIndex(first);
+    }
+}
+
+void MainWindow::sendChatMessage()
+{
+    const QString question = ui->chatInputEdit->text().trimmed();
+    if (question.isEmpty())
+        return;
+
+    if (currentSelectedObjectId() < 0) {
+        QMessageBox::information(this, tr("Guide"), tr("Select an object in the Objects tab first."));
+        return;
+    }
+
+    ui->chatInputEdit->clear();
+    ui->chatHistoryEdit->appendPlainText(QStringLiteral("You: %1").arg(question));
+    ui->chatHistoryEdit->appendPlainText(tr("Celested: …"));
+    ui->rightTabWidget->setCurrentWidget(ui->guideTab);
+
+    m_llmClient->askAboutObject(question, buildObjectContext());
+}
+
+void MainWindow::onLlmReply(const QString &reply)
+{
+    QTextCursor cursor(ui->chatHistoryEdit->document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.select(QTextCursor::BlockUnderCursor);
+    if (cursor.selectedText().startsWith(QStringLiteral("Celested:")))
+        cursor.removeSelectedText();
+
+    ui->chatHistoryEdit->appendPlainText(QStringLiteral("Celested: %1").arg(reply));
+    ui->chatHistoryEdit->appendPlainText(QString());
+}
+
+void MainWindow::onLlmError(const QString &error)
+{
+    ui->chatHistoryEdit->appendPlainText(QStringLiteral("Celested: %1").arg(error));
+    ui->chatHistoryEdit->appendPlainText(QString());
+    switchInspectorToLog(error);
+}
+
+QVariantMap MainWindow::buildObjectContext() const
+{
+    QVariantMap context;
+    const QModelIndex current = ui->objectsTableView->currentIndex();
+    if (!current.isValid() || !objectsModel)
+        return context;
+
+    const int row = current.row();
+    auto cell = [&](int column) { return objectsModel->data(objectsModel->index(row, column)).toString(); };
+
+    context.insert(QStringLiteral("name"), cell(1));
+    context.insert(QStringLiteral("type"), cell(2));
+    context.insert(QStringLiteral("ra"), cell(4));
+    context.insert(QStringLiteral("dec"), cell(5));
+    context.insert(QStringLiteral("magnitude"), cell(6));
+    context.insert(QStringLiteral("constellation"), cell(7));
+    context.insert(QStringLiteral("messier"), cell(8));
+    context.insert(QStringLiteral("ngc"), cell(9));
+    context.insert(QStringLiteral("ic"), cell(10));
+    context.insert(QStringLiteral("identification_status"), cell(11));
+    context.insert(QStringLiteral("guessed_type"), cell(12));
+    context.insert(QStringLiteral("simbad_type"), cell(13));
+    return context;
 }
 
 void MainWindow::toggleDrawMode(bool checked)
@@ -1197,7 +1281,7 @@ void MainWindow::toggleDrawMode(bool checked)
 
     if (checked) {
         const int objectId = currentSelectedObjectId();
-        if (objectId > 0) {
+        if (objectId >= 0) {
             const QString objectName =
                 objectsModel->data(objectsModel->index(ui->objectsTableView->currentIndex().row(), 1)).toString();
             ui->objectInfoEdit->setPlainText(
@@ -1224,36 +1308,59 @@ void MainWindow::saveDetectionFromRect(const QRectF &rect)
     if (currentImageId < 0)
         return;
 
+    bool clampedChanged = false;
+    const QRectF normalizedRect = clampedRectToCurrentImage(rect.normalized(), &clampedChanged);
+    if (normalizedRect.width() < 4.0 || normalizedRect.height() < 4.0) {
+        LOG_WARN("Annotation", QStringLiteral("Ignored tiny detection rect %1x%2")
+                                   .arg(normalizedRect.width())
+                                   .arg(normalizedRect.height()));
+        showStatusHint(tr("Detection is too small. Draw a larger rectangle."));
+        return;
+    }
+
     const int objectId = currentSelectedObjectId();
 
-    QSqlDatabase db = QSqlDatabase::database("objects-connection");
+    QSqlDatabase db = QSqlDatabase::database(QStringLiteral("objects-connection"));
     if (!db.isValid() || !db.isOpen())
         return;
 
     QSqlQuery query(db);
     query.prepare(
-        "INSERT INTO detections (image_id, object_id, x, y, width, height, confidence) "
-        "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"
-        );
-    query.bindValue(":image_id", currentImageId);
-    query.bindValue(":object_id", objectId > 0 ? QVariant(objectId) : QVariant());
-    query.bindValue(":x", rect.x());
-    query.bindValue(":y", rect.y());
-    query.bindValue(":width", rect.width());
-    query.bindValue(":height", rect.height());
-    query.bindValue(":confidence", 1.0);
+        QStringLiteral("INSERT INTO detections (image_id, object_id, x, y, width, height, confidence) "
+                       "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"));
+    query.bindValue(QStringLiteral(":image_id"), currentImageId);
+    query.bindValue(QStringLiteral(":object_id"), objectId >= 0 ? QVariant(objectId) : QVariant());
+    query.bindValue(QStringLiteral(":x"), normalizedRect.x());
+    query.bindValue(QStringLiteral(":y"), normalizedRect.y());
+    query.bindValue(QStringLiteral(":width"), normalizedRect.width());
+    query.bindValue(QStringLiteral(":height"), normalizedRect.height());
+    query.bindValue(QStringLiteral(":confidence"), 1.0);
 
-    if (!query.exec())
+    if (!query.exec()) {
+        logSqlFailure(QStringLiteral("insert detection"), query);
+        showStatusHint(tr("Failed to save detection."));
         return;
+    }
+
+    const int detectionId = query.lastInsertId().toInt();
+    LOG_INFO("Annotation",
+             QStringLiteral("Created detection id=%1 on image=%2 object=%3")
+                 .arg(detectionId)
+                 .arg(currentImageId)
+                 .arg(objectId >= 0 ? QString::number(objectId) : QStringLiteral("none")));
+
+    if (clampedChanged)
+        appendActivityLog(tr("New detection was clamped to image bounds."));
 
     detectionsModel->select();
     loadDetections();
+    selectDetectionById(detectionId);
     refreshValidationHighlighting();
     updateDetectionInfo();
     updateQuickStats();
     refreshActionStates();
     ui->rightTabWidget->setCurrentWidget(ui->detectionsTab);
-    showStatusHint("Detection created.");
+    showStatusHint(tr("Detection created."));
 }
 
 void MainWindow::deleteCurrentDetection()
@@ -1277,12 +1384,13 @@ void MainWindow::deleteCurrentDetection()
 
     detectionsModel->removeRow(index.row());
     detectionsModel->select();
+    LOG_INFO("Annotation", QStringLiteral("Deleted detection #%1").arg(detectionId));
     loadDetections();
     refreshValidationHighlighting();
     updateQuickStats();
     refreshActionStates();
-    ui->objectInfoEdit->setPlainText("Detection deleted.");
-    showStatusHint("Detection deleted.");
+    ui->objectInfoEdit->setPlainText(tr("Detection deleted."));
+    showStatusHint(tr("Detection deleted."));
 }
 
 void MainWindow::linkDetectionToSelectedObject()
@@ -1394,7 +1502,8 @@ void MainWindow::exportAnnotationsToJson()
     file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     file.close();
 
-    switchInspectorToLog(QString("Exported JSON:\n%1").arg(filePath));
+    LOG_INFO("Export", QStringLiteral("Exported JSON with %1 detections to %2").arg(detectionsArray.size()).arg(filePath));
+    switchInspectorToLog(tr("Exported JSON: %1 (%2 detections)").arg(filePath).arg(detectionsArray.size()));
     refreshActionStates();
     showStatusHint(QString("Exported: %1").arg(QFileInfo(filePath).fileName()), 3000);
 }
@@ -1449,23 +1558,27 @@ void MainWindow::importAnnotationsFromJson()
         return;
     }
 
+    const int newImageId = resolveImageRecord(imagePath);
+    if (newImageId < 0) {
+        showStatusHint(tr("Failed to create image record."));
+        return;
+    }
+
     if (!db.transaction()) {
-        showStatusHint("Failed to start database transaction.");
+        LOG_ERROR("Import", QStringLiteral("Failed to start transaction: %1").arg(db.lastError().text()));
+        showStatusHint(tr("Failed to start database transaction."));
         return;
     }
 
-    QSqlQuery imageQuery(db);
-    imageQuery.prepare("INSERT INTO images (path, title, created_at) VALUES (:path, :title, datetime('now'))");
-    imageQuery.bindValue(":path", imagePath);
-    imageQuery.bindValue(":title", QFileInfo(imagePath).fileName());
-
-    if (!imageQuery.exec()) {
+    QSqlQuery clearQuery(db);
+    clearQuery.prepare(QStringLiteral("DELETE FROM detections WHERE image_id = :image_id"));
+    clearQuery.bindValue(QStringLiteral(":image_id"), newImageId);
+    if (!clearQuery.exec()) {
         db.rollback();
-        showStatusHint("Failed to create image record.");
+        logSqlFailure(QStringLiteral("clear detections before import"), clearQuery);
+        showStatusHint(tr("Failed to prepare image for import."));
         return;
     }
-
-    const int newImageId = imageQuery.lastInsertId().toInt();
 
     QSqlQuery detQuery(db);
     detQuery.prepare(
@@ -1489,18 +1602,21 @@ void MainWindow::importAnnotationsFromJson()
 
         if (!detQuery.exec()) {
             db.rollback();
-            showStatusHint("Failed to import detections.");
+            logSqlFailure(QStringLiteral("import detection"), detQuery);
+            showStatusHint(tr("Failed to import detections."));
             return;
         }
     }
 
     if (!db.commit()) {
         db.rollback();
-        showStatusHint("Failed to commit imported data.");
+        LOG_ERROR("Import", QStringLiteral("Commit failed: %1").arg(db.lastError().text()));
+        showStatusHint(tr("Failed to commit imported data."));
         return;
     }
 
     currentImageId = newImageId;
+    LOG_INFO("Import", QStringLiteral("Imported %1 detections from %2").arg(detectionsArray.size()).arg(filePath));
 
     imageScene->clear();
     detectionItemsById.clear();
@@ -1509,12 +1625,7 @@ void MainWindow::importAnnotationsFromJson()
     imageScene->setSceneRect(pix.rect());
     fitImageIfAvailable();
 
-    objectsModel->setFilter(QString("image_id = %1").arg(currentImageId));
-    objectsModel->select();
-
-    detectionsModel->setFilter(QString("image_id = %1").arg(currentImageId));
-    detectionsModel->select();
-
+    applyCatalogFiltersForCurrentImage();
     loadDetections();
     refreshValidationHighlighting();
     updateQuickStats();
@@ -1685,11 +1796,12 @@ void MainWindow::exportAnnotationsToYolo()
         yamlFile.close();
     }
 
-    switchInspectorToLog(QString("YOLO export completed.\nDirectory: %1").arg(exportDir));
+    LOG_INFO("Export", QStringLiteral("YOLO export completed in %1 (%2 classes)").arg(exportDir).arg(classNames.size()));
+    switchInspectorToLog(tr("YOLO export completed in %1").arg(exportDir));
     refreshActionStates();
-    QMessageBox::information(this, "YOLO export",
-                             QString("YOLO export completed successfully.\n\nFile: %1.txt").arg(baseName));
-    showStatusHint(QString("YOLO exported: %1.txt").arg(baseName), 3000);
+    QMessageBox::information(this, tr("YOLO export"),
+                             tr("YOLO export completed successfully.\n\nFile: %1.txt").arg(baseName));
+    showStatusHint(tr("YOLO exported: %1.txt").arg(baseName), 3000);
 }
 
 void MainWindow::validateAnnotations()
@@ -1707,11 +1819,16 @@ void MainWindow::validateAnnotations()
     applyValidationHighlighting(result);
     refreshActionStates();
 
+    LOG_INFO("Validation",
+             QStringLiteral("Checked %1 detections, %2 issue(s)")
+                 .arg(result.checkedCount)
+                 .arg(result.issues.size()));
+
     if (!result.issues.isEmpty()) {
-        QMessageBox::warning(this, "Validation completed",
-                             QString("Validation found %1 issue(s).\n\nProblematic boxes are highlighted in red.")
+        QMessageBox::warning(this, tr("Validation completed"),
+                             tr("Validation found %1 issue(s).\n\nProblematic boxes are highlighted in red.")
                                  .arg(result.issues.size()));
-        showStatusHint(QString("Validation found %1 issue(s).").arg(result.issues.size()), 4000);
+        showStatusHint(tr("Validation found %1 issue(s).").arg(result.issues.size()), 4000);
         return;
     }
 
@@ -1747,20 +1864,34 @@ void MainWindow::selectDetectionById(int detectionId)
 
 void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
 {
-    QSqlDatabase db = QSqlDatabase::database("objects-connection");
+    QSqlDatabase db = QSqlDatabase::database(QStringLiteral("objects-connection"));
     if (!db.isValid() || !db.isOpen())
         return;
 
-    QSqlQuery query(db);
-    query.prepare("UPDATE detections SET x = :x, y = :y, width = :w, height = :h WHERE id = :id");
-    query.bindValue(":x", rect.x());
-    query.bindValue(":y", rect.y());
-    query.bindValue(":w", rect.width());
-    query.bindValue(":h", rect.height());
-    query.bindValue(":id", detectionId);
+    bool changed = false;
+    const QRectF clamped = clampedRectToCurrentImage(rect.normalized(), &changed);
 
-    if (!query.exec())
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("UPDATE detections SET x = :x, y = :y, width = :w, height = :h WHERE id = :id"));
+    query.bindValue(QStringLiteral(":x"), clamped.x());
+    query.bindValue(QStringLiteral(":y"), clamped.y());
+    query.bindValue(QStringLiteral(":w"), clamped.width());
+    query.bindValue(QStringLiteral(":h"), clamped.height());
+    query.bindValue(QStringLiteral(":id"), detectionId);
+
+    if (!query.exec()) {
+        logSqlFailure(QStringLiteral("update detection geometry"), query);
         return;
+    }
+
+    LOG_INFO("Annotation",
+             QStringLiteral("Updated detection id=%1 geometry to (%2,%3 %4x%5)%6")
+                 .arg(detectionId)
+                 .arg(clamped.x(), 0, 'f', 1)
+                 .arg(clamped.y(), 0, 'f', 1)
+                 .arg(clamped.width(), 0, 'f', 1)
+                 .arg(clamped.height(), 0, 'f', 1)
+                 .arg(changed ? QStringLiteral(" [clamped]") : QString()));
 
     detectionsModel->select();
     selectDetectionById(detectionId);
@@ -1770,10 +1901,10 @@ void MainWindow::updateDetectionGeometry(int detectionId, const QRectF &rect)
     ui->objectInfoEdit->setPlainText(
         QString("Detection updated.\n\nID: %1\nx=%2  y=%3\nwidth=%4  height=%5")
             .arg(detectionId)
-            .arg(rect.x(), 0, 'f', 1)
-            .arg(rect.y(), 0, 'f', 1)
-            .arg(rect.width(), 0, 'f', 1)
-            .arg(rect.height(), 0, 'f', 1)
+            .arg(clamped.x(), 0, 'f', 1)
+            .arg(clamped.y(), 0, 'f', 1)
+            .arg(clamped.width(), 0, 'f', 1)
+            .arg(clamped.height(), 0, 'f', 1)
         );
 
     switchInspectorToLog(QString("Detection %1 geometry updated.").arg(detectionId));
@@ -1785,46 +1916,6 @@ void MainWindow::clearDetectionItems()
     detectionItemsById.clear();
 }
 
-void MainWindow::createTestDetection()
-{
-    if (currentImageId < 0)
-        return;
-
-    QSqlDatabase db = QSqlDatabase::database("objects-connection");
-    if (!db.isValid() || !db.isOpen())
-        return;
-
-    QSqlQuery checkQuery(db);
-    checkQuery.prepare("SELECT COUNT(*) FROM detections WHERE image_id = :image_id");
-    checkQuery.bindValue(":image_id", currentImageId);
-    if (!checkQuery.exec() || !checkQuery.next())
-        return;
-    if (checkQuery.value(0).toInt() > 0)
-        return;
-
-    QSqlQuery objectQuery(db);
-    objectQuery.prepare("SELECT id FROM objects WHERE image_id = :image_id LIMIT 1");
-    objectQuery.bindValue(":image_id", currentImageId);
-
-    int objectId = 0;
-    if (objectQuery.exec() && objectQuery.next())
-        objectId = objectQuery.value(0).toInt();
-
-    QSqlQuery query(db);
-    query.prepare(
-        "INSERT INTO detections (image_id, object_id, x, y, width, height, confidence) "
-        "VALUES (:image_id, :object_id, :x, :y, :width, :height, :confidence)"
-        );
-    query.bindValue(":image_id", currentImageId);
-    query.bindValue(":object_id", objectId > 0 ? QVariant(objectId) : QVariant());
-    query.bindValue(":x", 120.0);
-    query.bindValue(":y", 90.0);
-    query.bindValue(":width", 180.0);
-    query.bindValue(":height", 140.0);
-    query.bindValue(":confidence", 0.85);
-    query.exec();
-}
-
 void MainWindow::loadDetections()
 {
     if (currentImageId < 0)
@@ -1832,8 +1923,10 @@ void MainWindow::loadDetections()
 
     const auto items = imageScene->items();
     for (QGraphicsItem *item : items) {
-        if (auto *rectItem = dynamic_cast<DetectionRectItem *>(item))
+        if (auto *rectItem = dynamic_cast<DetectionRectItem *>(item)) {
             imageScene->removeItem(rectItem);
+            delete rectItem;
+        }
     }
 
     clearDetectionItems();
@@ -1845,8 +1938,10 @@ void MainWindow::loadDetections()
     QSqlQuery query(db);
     query.prepare("SELECT id, x, y, width, height FROM detections WHERE image_id = :image_id");
     query.bindValue(":image_id", currentImageId);
-    if (!query.exec())
+    if (!query.exec()) {
+        logSqlFailure(QStringLiteral("load detections"), query);
         return;
+    }
 
     QPen defaultPen(QColor(44, 225, 255));
     defaultPen.setWidth(2);
@@ -1870,6 +1965,11 @@ void MainWindow::loadDetections()
         imageScene->addItem(rectItem);
         detectionItemsById[detectionId] = rectItem;
     }
+
+    LOG_DEBUG("Annotation",
+              QStringLiteral("Loaded %1 detection overlays for image %2")
+                  .arg(detectionItemsById.size())
+                  .arg(currentImageId));
 }
 
 void MainWindow::highlightDetectionForObject(int objectId)
@@ -1944,25 +2044,81 @@ void MainWindow::updateObjectInfo()
 {
     const QModelIndex current = ui->objectsTableView->currentIndex();
     if (!current.isValid()) {
-        ui->objectInfoEdit->setPlainText("No object selected.");
+        ui->objectInfoEdit->setPlainText(tr("No object selected."));
+        updateGuideSummary();
         return;
     }
 
     const int row = current.row();
-    const QString name = objectsModel->data(objectsModel->index(row, 1)).toString();
-    const QString type = objectsModel->data(objectsModel->index(row, 2)).toString();
-    const QString ra = objectsModel->data(objectsModel->index(row, 4)).toString();
-    const QString dec = objectsModel->data(objectsModel->index(row, 5)).toString();
-    const QString mag = objectsModel->data(objectsModel->index(row, 6)).toString();
-    const QString constellation = objectsModel->data(objectsModel->index(row, 7)).toString();
+    auto cell = [&](int column) { return objectsModel->data(objectsModel->index(row, column)).toString(); };
+
+    const QString name = cell(1);
+    const QString type = cell(2);
+    const QString ra = cell(4);
+    const QString dec = cell(5);
+    const QString mag = cell(6);
+    const QString constellation = cell(7);
+    const QString messier = cell(8);
+    const QString ngc = cell(9);
+    const QString ic = cell(10);
+    const QString idStatus = cell(11);
+    const QString guessedType = cell(12);
+    const QString simbadType = cell(13);
 
     ui->objectInfoEdit->setPlainText(
-        QString("Object summary\n\n"
-                "Name: %1\nType: %2\nRA: %3\nDec: %4\n"
-                "Magnitude: %5\nConstellation: %6\n\n"
-                "Draw a detection for this object or link an existing one.")
-            .arg(name, type, ra, dec, mag, constellation)
-        );
+        tr("Object summary\n\n"
+           "Name: %1\nType: %2\nRA: %3 h  Dec: %4°\n"
+           "Magnitude: %5\nConstellation: %6\n"
+           "Messier: %7  NGC: %8  IC: %9\n"
+           "Identification: %10\nGuessed class: %11\nSIMBAD type: %12")
+            .arg(name,
+                 type,
+                 ra,
+                 dec,
+                 mag.isEmpty() ? QStringLiteral("—") : mag,
+                 constellation.isEmpty() ? QStringLiteral("—") : constellation,
+                 messier.isEmpty() ? QStringLiteral("—") : messier,
+                 ngc.isEmpty() ? QStringLiteral("—") : ngc,
+                 ic.isEmpty() ? QStringLiteral("—") : ic,
+                 idStatus.isEmpty() ? QStringLiteral("—") : idStatus,
+                 guessedType.isEmpty() ? QStringLiteral("—") : guessedType,
+                 simbadType.isEmpty() ? QStringLiteral("—") : simbadType));
+
+    updateGuideSummary();
+}
+
+void MainWindow::updateGuideSummary()
+{
+    const QModelIndex current = ui->objectsTableView->currentIndex();
+    if (!current.isValid() || !objectsModel) {
+        ui->guideSummaryEdit->setPlainText(
+            tr("Select an object in the Objects list to see its catalog data and ask the guide questions."));
+        return;
+    }
+
+    const int row = current.row();
+    auto cell = [&](int column) { return objectsModel->data(objectsModel->index(row, column)).toString(); };
+
+    const QString idStatus = cell(11);
+    QString statusLine;
+    if (idStatus == QStringLiteral("matched")) {
+        statusLine = tr("Catalog match found.");
+    } else if (idStatus == QStringLiteral("guessed")) {
+        statusLine = tr("No exact catalog ID — likely class: %1").arg(cell(12));
+    } else if (idStatus == QStringLiteral("not_found")) {
+        statusLine = tr("Not identified in major catalogs.");
+    } else {
+        statusLine = tr("Identification status: %1").arg(idStatus.isEmpty() ? tr("unknown") : idStatus);
+    }
+
+    ui->guideSummaryEdit->setPlainText(
+        tr("%1\n\n%2\nType: %3\nRA %4 h · Dec %5° · Mag %6")
+            .arg(cell(1),
+                 statusLine,
+                 cell(2).isEmpty() ? cell(12) : cell(2),
+                 cell(4),
+                 cell(5),
+                 cell(6).isEmpty() ? QStringLiteral("—") : cell(6)));
 }
 
 void MainWindow::updateDetectionInfo()
@@ -1996,10 +2152,10 @@ void MainWindow::handleObjectSelection(const QModelIndex &current, const QModelI
     Q_UNUSED(previous)
 
     const int objectId = currentSelectedObjectId();
-    if (objectId > 0)
+    if (objectId >= 0)
         highlightDetectionForObject(objectId);
 
-    ui->rightTabWidget->setCurrentWidget(ui->catalogTab);
+    ui->rightTabWidget->setCurrentWidget(ui->guideTab);
     updateObjectInfo();
     refreshActionStates();
 }

@@ -3,12 +3,8 @@
 
 #include <QGraphicsView>
 #include <QRectF>
-#include <QPointF>
 
-class QGraphicsRectItem;
-class QWheelEvent;
-class QResizeEvent;
-class QKeyEvent;
+class QRubberBand;
 
 class ImageView : public QGraphicsView
 {
@@ -18,8 +14,9 @@ public:
     explicit ImageView(QWidget *parent = nullptr);
 
     void setDrawModeEnabled(bool enabled);
-    bool isDrawModeEnabled() const;
+    bool drawModeEnabled() const;
 
+public slots:
     void zoomIn();
     void zoomOut();
     void fitSceneInView();
@@ -29,27 +26,23 @@ signals:
     void temporaryPanStateChanged(bool active);
 
 protected:
+    void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
-    void focusOutEvent(QFocusEvent *event) override;
 
 private:
-    void applyZoom(qreal factor);
-    void updateInteractionMode();
-    void setTemporaryPanActive(bool active);
+    QRectF currentSceneRectFromRubberBand() const;
+    void setTemporaryPanEnabled(bool enabled);
 
+private:
     bool m_drawModeEnabled;
     bool m_drawing;
-    bool m_fitMode;
-    bool m_spacePressed;
     bool m_temporaryPanActive;
-    QPointF m_startScenePos;
-    QGraphicsRectItem *m_previewRect;
+    QPoint m_origin;
+    QRubberBand *m_rubberBand;
 };
 
 #endif // IMAGEVIEW_H
